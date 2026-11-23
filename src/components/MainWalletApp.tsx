@@ -137,20 +137,56 @@ export function MainWalletApp({
     }, 5200);
   }, []);
 
-  // Read incoming Pay-Link query params (?pay=<address>&amount=<sol>&handle=<name>)
+  // Read & strictly validate incoming Pay-Link query params (?pay=<address>&amount=<sol>&handle=<name>)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const payAddr = params.get("pay");
-    const payAmt = params.get("amount");
-    const payHandle = params.get("handle");
-    if (payAddr) {
+    const payAddr = params.get("pay")?.trim();
+    const payAmtRaw = params.get("amount")?.trim();
+    const payHandleRaw = params.get("handle")?.trim();
+    if (payAddr && isValidSolanaAddress(payAddr)) {
       setRecipientInput(payAddr);
-      if (payAmt) setAmountInput(payAmt);
-      if (payHandle) setMemoInput(`Private Pay-Link an @${payHandle}`);
+      if (payAmtRaw) {
+        const parsedAmt = Number(payAmtRaw);
+        if (Number.isFinite(parsedAmt) && parsedAmt > 0 && parsedAmt <= 10_000) {
+          setAmountInput(String(parsedAmt));
+        }
+      }
+      if (payHandleRaw) {
+        const safeHandle = payHandleRaw.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 32);
+        if (safeHandle) {
+          setMemoInput(`Private Pay-Link an @${safeHandle}`);
+        }
+      }
       setTxAction("privateSend");
       setTab("transact");
+      showToast(
+        "ok",
+        "Pay-Link geladen — bitte Empfänger-Adresse & Betrag vor dem Senden genau prüfen!",
+      );
+    } else if (payAddr) {
+      showToast("err", "Ungültige Solana-Adresse im Pay-Link ignoriert.");
     }
-  }, []);
+  }, [showToast]);
+
+  // Automatic vault lock after 15 minutes of inactivity
+  useEffect(() => {
+    const IDLE_LOCK_MS = 15 * 60 * 1000;
+    let timer = window.setTimeout(onLock, IDLE_LOCK_MS);
+    const resetTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(onLock, IDLE_LOCK_MS);
+    };
+    const events: (keyof WindowEventMap)[] = [
+      "pointerdown",
+      "keydown",
+      "touchstart",
+    ];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+  }, [onLock]);
 
   // Connect to Helius Devnet when in devnet mode
   const refreshDevnet = useCallback(
