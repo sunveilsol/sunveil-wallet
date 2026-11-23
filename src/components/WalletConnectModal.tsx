@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   Copy,
@@ -112,9 +113,9 @@ export function WalletConnectModal({
     }
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
       onClick={onClose}
     >
       <div
@@ -310,6 +311,7 @@ export function WalletConnectModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

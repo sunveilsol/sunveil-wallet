@@ -477,19 +477,19 @@ export function MainWalletApp({
           </button>
 
           {/* Right Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* External Solana Wallet Connect (Phantom / Solflare / Backpack) */}
             <button
               type="button"
               onClick={() => setWalletModalOpen(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium border inline-flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 connectedWallet
                   ? "bg-emerald-500/12 border-emerald-500/35 text-emerald-300"
                   : "bg-zinc-900/90 border-zinc-800 hover:border-[#ff5500]/45 text-zinc-200 hover:text-[#ff8a3d]"
               }`}
               title="Phantom, Solflare oder Backpack verbinden (100 % Non-Custodial)"
             >
-              <WalletIcon className="w-3.5 h-3.5 shrink-0" />
+              <WalletIcon className="w-4 h-4 shrink-0" />
               <span className="hidden sm:inline">
                 {connectedWallet
                   ? `${connectedWallet.name} · ${shortAddr(connectedWallet.address, 4, 4)}`
@@ -508,7 +508,7 @@ export function MainWalletApp({
                 }
                 setNetworkMode((m) => (m === "demo" ? "devnet" : "demo"));
               }}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+              className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium border inline-flex items-center justify-center gap-2 transition cursor-pointer ${
                 networkMode === "devnet"
                   ? "bg-emerald-500/12 border-emerald-500/35 text-emerald-300"
                   : "bg-[#ff5500]/12 border-[#ff5500]/35 text-[#ff944d]"
@@ -516,7 +516,7 @@ export function MainWalletApp({
               title="Zwischen Sandbox-Vorschau und echtem Helius Devnet wechseln"
             >
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full shrink-0 ${
                   networkMode === "devnet"
                     ? devnetReady
                       ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
@@ -536,7 +536,7 @@ export function MainWalletApp({
             <button
               type="button"
               onClick={() => setPrivacyBlur((b) => !b)}
-              className="p-2 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-300 hover:text-[#ff8533] transition cursor-pointer"
+              className="h-9 w-9 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-300 hover:text-[#ff8533] inline-flex items-center justify-center transition cursor-pointer"
               title={privacyBlur ? "Beträge einblenden" : "Beträge verschleiern"}
             >
               {privacyBlur ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -546,7 +546,7 @@ export function MainWalletApp({
             <button
               type="button"
               onClick={onLock}
-              className="p-2 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-300 hover:text-[#ff8533] transition cursor-pointer"
+              className="h-9 w-9 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-300 hover:text-[#ff8533] inline-flex items-center justify-center transition cursor-pointer"
               title="Tresor sperren"
             >
               <Lock className="w-4 h-4" />
@@ -653,9 +653,11 @@ export function MainWalletApp({
 
                   {/* Privacy Ratio Bar */}
                   <div className="mt-5 max-w-md">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5">
+                    <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-400 mb-1.5">
                       <span>Privatsphäre-Anteil ({utxoCount} verschlüsselte UTXOs)</span>
-                      <span className="font-mono text-[#ff8533]">{shieldedRatio} % geschützt</span>
+                      <span className="font-mono text-[#ff8533] whitespace-nowrap shrink-0">
+                        {shieldedRatio} % geschützt
+                      </span>
                     </div>
                     <div className="h-2 rounded-full bg-zinc-900 border border-zinc-800 overflow-hidden">
                       <div
@@ -722,10 +724,12 @@ export function MainWalletApp({
                     setTxAction("shield");
                     setTab("transact");
                   }}
-                  className="py-3.5 px-4 rounded-2xl ember-btn-primary text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                  className="py-3.5 px-4 rounded-2xl ember-btn-primary text-white text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
                 >
-                  <Shield className="w-4 h-4" />
-                  Shield (Einzahlen)
+                  <Shield className="w-4 h-4 shrink-0" />
+                  <span>
+                    Shield <span className="hidden sm:inline">(Einzahlen)</span>
+                  </span>
                 </button>
                 <button
                   type="button"

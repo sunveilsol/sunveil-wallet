@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { ShieldCheck, X } from "lucide-react";
 
 interface LegalModalProps {
@@ -7,13 +9,22 @@ interface LegalModalProps {
 }
 
 export function LegalModal({ open, onClose, lang = "de" }: LegalModalProps) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const isDe = lang === "de";
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
       onClick={onClose}
     >
       <div
@@ -93,6 +104,7 @@ export function LegalModal({ open, onClose, lang = "de" }: LegalModalProps) {
           {isDe ? "Verstanden" : "Got it"}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

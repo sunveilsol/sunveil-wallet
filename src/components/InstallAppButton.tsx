@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Smartphone, X } from "lucide-react";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -34,6 +35,15 @@ export function InstallAppButton({
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
 
+  useEffect(() => {
+    if (!showGuide) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowGuide(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showGuide]);
+
   if (isStandalone) return null;
 
   async function handleClick() {
@@ -57,77 +67,87 @@ export function InstallAppButton({
         onClick={handleClick}
         className={
           compact
-            ? "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-300 hover:text-[#ff8533] text-xs font-medium transition cursor-pointer"
+            ? "h-9 px-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-[#ff5500]/45 text-zinc-300 hover:text-[#ff8533] text-xs font-medium inline-flex items-center justify-center gap-1.5 transition cursor-pointer"
             : "inline-flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-[#111116] hover:bg-[#17171f] border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-200 text-sm font-semibold transition cursor-pointer"
         }
         title={label}
       >
-        {compact ? <Smartphone className="w-3.5 h-3.5" /> : <Download className="w-4 h-4 text-[#ff7a1a]" />}
+        {compact ? (
+          <Smartphone className="w-4 h-4 shrink-0" />
+        ) : (
+          <Download className="w-4 h-4 text-[#ff7a1a] shrink-0" />
+        )}
         <span className={compact ? "hidden md:inline" : ""}>{label}</span>
       </button>
 
-      {showGuide && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
-          onClick={() => setShowGuide(false)}
-        >
+      {showGuide &&
+        createPortal(
           <div
-            className="ember-card w-full max-w-sm rounded-3xl p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setShowGuide(false)}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <img
-                  src="/icon-192.png"
-                  alt="SUNVEIL App Icon"
-                  className="w-10 h-10 rounded-xl border border-[#ff5500]/40"
-                />
-                <div>
-                  <h3 className="font-display font-bold text-white text-base">
-                    {lang === "de" ? "SUNVEIL als App installieren" : "Install SUNVEIL App"}
-                  </h3>
-                  <p className="text-[11px] text-zinc-400">iOS · Android · Desktop PWA</p>
+            <div
+              className="ember-card w-full max-w-md rounded-3xl p-6 space-y-5 shadow-[0_32px_90px_rgba(0,0,0,0.9)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <img
+                    src="/icon-192.png"
+                    alt="SUNVEIL App Icon"
+                    className="w-11 h-11 rounded-2xl border border-[#ff5500]/45 shadow-[0_0_24px_rgba(255,85,0,0.3)] shrink-0"
+                  />
+                  <div>
+                    <h3 className="font-display font-bold text-white text-lg leading-tight">
+                      {lang === "de" ? "SUNVEIL als App installieren" : "Install SUNVEIL App"}
+                    </h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      iOS · Android · Desktop PWA (0 € · kein App Store)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGuide(false)}
+                  className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs text-zinc-300">
+                <div className="p-4 rounded-2xl bg-[#09090d] border border-zinc-800/90 space-y-1">
+                  <div className="font-semibold text-[#ff8a3d]">iPhone / iPad (Safari)</div>
+                  <p className="text-zinc-400 leading-relaxed">
+                    {lang === "de"
+                      ? "Tippe unten auf das Teilen-Symbol (↑) und wähle „Zum Home-Bildschirm hinzufügen“."
+                      : "Tap the Share icon (↑) in Safari, then choose 'Add to Home Screen'."}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-[#09090d] border border-zinc-800/90 space-y-1">
+                  <div className="font-semibold text-[#ff8a3d]">
+                    Android &amp; Desktop (Chrome / Brave)
+                  </div>
+                  <p className="text-zinc-400 leading-relaxed">
+                    {lang === "de"
+                      ? "Tippe oben rechts auf das Browser-Menü (⋮) oder das Install-Symbol in der Adressleiste → „App installieren“."
+                      : "Open the browser menu (⋮) or click the Install icon in the address bar → 'Install App'."}
+                  </p>
                 </div>
               </div>
+
               <button
                 type="button"
                 onClick={() => setShowGuide(false)}
-                className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
-                aria-label="Close"
+                className="w-full py-3 rounded-2xl ember-btn-primary text-white text-sm font-semibold cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                {lang === "de" ? "Alles klar" : "Got it"}
               </button>
             </div>
-
-            <div className="space-y-2.5 text-xs text-zinc-300">
-              <div className="p-3 rounded-xl bg-[#09090d] border border-zinc-800/90">
-                <div className="font-semibold text-[#ff8a3d] mb-1">iPhone / iPad (Safari)</div>
-                <p className="text-zinc-400">
-                  {lang === "de"
-                    ? "Tippe unten auf das Teilen-Symbol (↑) und dann auf „Zum Home-Bildschirm“."
-                    : "Tap the Share icon (↑) in Safari, then tap 'Add to Home Screen'."}
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-[#09090d] border border-zinc-800/90">
-                <div className="font-semibold text-[#ff8a3d] mb-1">Android / Desktop (Chrome & Brave)</div>
-                <p className="text-zinc-400">
-                  {lang === "de"
-                    ? "Klicke im Browser-Menü (⋮) oder in der Adressleiste auf „App installieren“."
-                    : "Open the browser menu (⋮) or address bar icon and choose 'Install App'."}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowGuide(false)}
-              className="w-full py-2.5 rounded-xl ember-btn-primary text-white text-xs font-semibold cursor-pointer"
-            >
-              {lang === "de" ? "Alles klar" : "Got it"}
-            </button>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
