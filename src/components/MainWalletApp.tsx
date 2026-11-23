@@ -447,9 +447,9 @@ export function MainWalletApp({
   const xBioSnippet = `🔒 Pay me privately on Solana (Helius Privacy Rings): ${payLinkUrl}`;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col overflow-x-hidden w-full">
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#070709]/80 border-b border-[#ff5500]/15">
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#070709]/85 border-b border-[#ff5500]/15 pt-[env(safe-area-inset-top)]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           {/* Brand */}
           <button
@@ -557,7 +557,7 @@ export function MainWalletApp({
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm">
+        <div className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 z-50 sm:max-w-sm">
           <div
             className={`px-4 py-3 rounded-2xl text-xs font-medium shadow-2xl border backdrop-blur-xl flex items-center gap-2.5 ${
               toast.kind === "ok"
@@ -576,9 +576,9 @@ export function MainWalletApp({
       )}
 
       {/* Main Layout */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-7">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-7">
         {/* Non-Custodial Status Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-6 px-4 py-2.5 rounded-2xl bg-[#0e0e13]/90 border border-zinc-800/80 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-5 sm:mb-6 px-3.5 sm:px-4 py-2.5 rounded-2xl bg-[#0e0e13]/90 border border-zinc-800/80 text-xs">
           <div className="flex items-center gap-2 text-zinc-300">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>
@@ -603,12 +603,12 @@ export function MainWalletApp({
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="grid grid-cols-4 gap-2 p-1.5 rounded-2xl bg-[#0d0d12] border border-zinc-800/90 mb-7">
+        <nav className="grid grid-cols-4 gap-1.5 sm:gap-2 p-1.5 rounded-2xl bg-[#0d0d12] border border-zinc-800/90 mb-6 sm:mb-7">
           {[
-            { id: "vault" as const, label: "Tresor", icon: WalletIcon },
-            { id: "transact" as const, label: "Senden & Shield", icon: Send },
-            { id: "paylinks" as const, label: "X Pay-Links", icon: Link2 },
-            { id: "security" as const, label: "Sicherheit & Helius", icon: KeyRound },
+            { id: "vault" as const, label: "Tresor", shortLabel: "Tresor", icon: WalletIcon },
+            { id: "transact" as const, label: "Senden & Shield", shortLabel: "Senden", icon: Send },
+            { id: "paylinks" as const, label: "X Pay-Links", shortLabel: "Pay-Links", icon: Link2 },
+            { id: "security" as const, label: "Sicherheit & Helius", shortLabel: "Sicherheit", icon: KeyRound },
           ].map((item) => {
             const Icon = item.icon;
             const active = tab === item.id;
@@ -617,14 +617,15 @@ export function MainWalletApp({
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id)}
-                className={`py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${
+                className={`py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl text-[11px] sm:text-sm font-semibold flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 transition cursor-pointer ${
                   active
                     ? "bg-gradient-to-r from-[#ff6a00]/22 to-[#ff4500]/16 text-[#ff8533] border border-[#ff5500]/40 shadow-[0_0_20px_rgba(255,85,0,0.16)]"
                     : "text-zinc-400 hover:text-zinc-100 border border-transparent"
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                <span className="sm:hidden leading-tight">{item.shortLabel}</span>
+                <span className="hidden sm:inline truncate">{item.label}</span>
               </button>
             );
           })}
@@ -1347,22 +1348,28 @@ export function MainWalletApp({
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-500/25">
-                  <div className="flex items-center justify-between text-red-300 mb-1.5">
+                <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-500/25 overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 text-red-300 mb-1.5">
                     <span className="font-semibold">Privater Ed25519 Seed (Geheim!)</span>
                     <button
                       type="button"
                       onClick={() => setRevealSecret((r) => !r)}
-                      className="text-xs text-red-300 hover:underline flex items-center gap-1 cursor-pointer"
+                      className="text-xs text-red-300 hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
                     >
                       {revealSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       {revealSecret ? "Verbergen" : "Anzeigen"}
                     </button>
                   </div>
-                  <div className="font-mono text-[11px] text-red-200/90 break-all">
+                  <div
+                    className={`font-mono text-[11px] text-red-200/90 ${
+                      revealSecret
+                        ? "break-all [overflow-wrap:anywhere]"
+                        : "tracking-widest break-words select-none opacity-80"
+                    }`}
+                  >
                     {revealSecret
                       ? unlocked.profile.secretKeyHex
-                      : "••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••"}
+                      : "•••• •••• •••• •••• •••• •••• •••• ••••"}
                   </div>
                   {revealSecret && (
                     <button
@@ -1395,7 +1402,7 @@ export function MainWalletApp({
         )}
       </main>
 
-      <footer className="max-w-5xl w-full mx-auto px-4 sm:px-6 pb-8 pt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
+      <footer className="max-w-5xl w-full mx-auto px-4 sm:px-6 pt-2 pb-[calc(2rem+env(safe-area-inset-bottom))] flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
         <span>SUNVEIL · 100 % Non-Custodial Open-Source Interface</span>
         <div className="flex items-center gap-3">
           <button

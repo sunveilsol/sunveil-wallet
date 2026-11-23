@@ -212,7 +212,7 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
       <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[780px] h-[520px] rounded-full bg-[#ff5500]/14 blur-[140px]" />
 
       {/* Top Navigation */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#070709]/80 border-b border-[#ff5500]/15">
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#070709]/85 border-b border-[#ff5500]/15 pt-[env(safe-area-inset-top)]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#ff6a00] to-[#c93700] ember-ring-glow flex items-center justify-center">

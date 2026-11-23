@@ -13,6 +13,12 @@
 }
 
 @layer base {
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: #070709;
@@ -20,6 +26,7 @@
       radial-gradient(ellipse 65% 45% at 50% -10%, rgba(255, 85, 0, 0.22), transparent 70%),
       radial-gradient(ellipse 40% 30% at 85% 95%, rgba(255, 107, 0, 0.08), transparent 70%);
     min-height: 100vh;
+    min-height: 100dvh;
   }
 
   h1, h2, h3, .font-display {

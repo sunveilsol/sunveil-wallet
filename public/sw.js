@@ -1,4 +1,4 @@
-const CACHE_NAME = "sunveil-pwa-v1";
+const CACHE_NAME = "sunveil-pwa-v2";
 const SHELL_ASSETS = [
   "/",
   "/manifest.webmanifest",
