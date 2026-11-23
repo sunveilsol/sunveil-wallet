@@ -10,7 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://x.com/SunVeilSol"><img src="https://img.shields.io/badge/X-@SunVeilSol-ff5500?style=flat-square&logo=x&logoColor=white" alt="Follow @SunVeilSol on X" /></a>
+  <a href="https://sunveil-wallet.vercel.app"><img src="https://img.shields.io/badge/Live%20App-sunveil--wallet.vercel.app-ff5500?style=flat-square" alt="Launch SUNVEIL Live App" /></a>
+  <a href="https://x.com/SunVeilSol"><img src="https://img.shields.io/badge/X-@SunVeilSol-111116?style=flat-square&logo=x&logoColor=white" alt="Follow @SunVeilSol on X" /></a>
   <img src="https://img.shields.io/badge/Solana-Privacy%20Rings-0d0d12?style=flat-square" alt="Solana Privacy Rings" />
   <img src="https://img.shields.io/badge/Custody-100%25%20Client--Side-10b981?style=flat-square" alt="100% Non-Custodial" />
   <img src="https://img.shields.io/badge/License-MIT-zinc?style=flat-square" alt="MIT License" />

@@ -539,14 +539,25 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
             <span>·</span>
             <span>{t.footerDisclaimer}</span>
           </div>
-          <a
-            href={X_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[#ff8533] hover:text-[#ffaa66] font-medium shrink-0"
-          >
-            x.com/SunVeilSol
-          </a>
+          <div className="flex items-center gap-4 shrink-0">
+            <a
+              href="https://github.com/sunveilsol/sunveil-wallet"
+              target="_blank"
+              rel="noreferrer"
+              className="text-zinc-400 hover:text-white font-medium transition-colors"
+            >
+              GitHub (Open Source)
+            </a>
+            <span className="text-zinc-700">·</span>
+            <a
+              href={X_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[#ff8533] hover:text-[#ffaa66] font-medium"
+            >
+              x.com/SunVeilSol
+            </a>
+          </div>
         </div>
       </footer>
     </div>
