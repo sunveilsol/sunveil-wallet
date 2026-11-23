@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-ember-400: #ff7a29;
+  --color-ember-500: #ff5500;
+  --color-ember-600: #e04600;
+  --color-obsidian-950: #070709;
+  --color-obsidian-900: #0d0d12;
+  --color-obsidian-800: #14141c;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #070709;
+    background-image:
+      radial-gradient(ellipse 65% 45% at 50% -10%, rgba(255, 85, 0, 0.22), transparent 70%),
+      radial-gradient(ellipse 40% 30% at 85% 95%, rgba(255, 107, 0, 0.08), transparent 70%);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+.ember-card {
+  background: linear-gradient(165deg, rgba(22, 22, 29, 0.92) 0%, rgba(11, 11, 15, 0.96) 100%);
+  border: 1px solid rgba(255, 98, 0, 0.16);
+  box-shadow:
+    0 24px 60px -24px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 0 rgba(255, 138, 61, 0.09);
+}
+
+.ember-hero-card {
+  background:
+    radial-gradient(circle at 88% 14%, rgba(255, 85, 0, 0.26) 0%, rgba(255, 85, 0, 0.04) 40%, transparent 68%),
+    linear-gradient(145deg, #161213 0%, #0d0c10 55%, #09090d 100%);
+  border: 1px solid rgba(255, 95, 0, 0.32);
+  box-shadow:
+    0 28px 70px -20px rgba(255, 85, 0, 0.18),
+    inset 0 1px 0 0 rgba(255, 148, 77, 0.22);
+}
+
+.ember-btn-primary {
+  background: linear-gradient(135deg, #ff6a00 0%, #ff4800 100%);
+  box-shadow:
+    0 8px 28px -6px rgba(255, 85, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: all 0.18s ease;
+}
+
+.ember-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.09);
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 34px -6px rgba(255, 85, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.ember-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ember-ring-glow {
+  box-shadow: 0 0 24px rgba(255, 85, 0, 0.45), inset 0 0 14px rgba(255, 120, 40, 0.35);
+}
+
+.privacy-blur {
+  filter: blur(8px);
+  user-select: none;
+}
+
+/* Custom slim scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #070709;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 95, 0, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 95, 0, 0.45);
+}

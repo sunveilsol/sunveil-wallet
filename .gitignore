@@ -1,0 +1,13 @@
+node_modules
+dist
+.DS_Store
+*.log
+.env
+.env.local
+tsconfig.tsbuildinfo
+
+# Local launch & macOS helper files (keep local, do not push to public GitHub)
+x-launch-kit/
+DEPLOY-ANLEITUNG.md
+STEP-BY-STEP-FAHRPLAN.md
+SUNVEIL-Starten.command
