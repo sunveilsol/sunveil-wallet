@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   KeyRound,
   Lock,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import type { EncryptedVaultRecord } from "../types";
 import {
+  MIN_VAULT_PASSWORD_LENGTH,
   clearStoredVault,
   createKeypairFromSecretHex,
   decryptVault,
@@ -33,7 +35,9 @@ export function VaultOnboarding({
 }: VaultOnboardingProps) {
   const [mode, setMode] = useState<"create" | "import">("create");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [importHex, setImportHex] = useState("");
+  const [confirmReset, setConfirmReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +48,8 @@ export function VaultOnboarding({
     setBusy(true);
     try {
       const secretHex = await decryptVault(existingVault, password);
-      const unlocked = await createKeypairFromSecretHex(secretHex);
+      const { unlocked } = await createKeypairFromSecretHex(secretHex, { isEphemeral: false });
+      setPassword("");
       onUnlocked(unlocked);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Entsperren fehlgeschlagen.");
@@ -56,20 +61,30 @@ export function VaultOnboarding({
   async function handleCreateOrImport(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (password.length < 4) {
-      setError("Bitte wähle mindestens 4 Zeichen für dein lokales Tresor-Passwort.");
+    if (password.length < MIN_VAULT_PASSWORD_LENGTH) {
+      setError(
+        `Bitte wähle mindestens ${MIN_VAULT_PASSWORD_LENGTH} Zeichen für dein lokales Tresor-Passwort.`,
+      );
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Die beiden Passwörter stimmen nicht überein.");
       return;
     }
     setBusy(true);
     try {
-      const unlocked = await createKeypairFromSecretHex(
+      const { unlocked, secretKeyHex } = await createKeypairFromSecretHex(
         mode === "import" ? importHex : undefined,
+        { isEphemeral: false },
       );
       await encryptAndSaveVault(
-        unlocked.profile.secretKeyHex,
+        secretKeyHex,
         unlocked.profile.solanaAddress,
         password,
       );
+      setPassword("");
+      setConfirmPassword("");
+      setImportHex("");
       onUnlocked(unlocked);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Wallet konnte nicht erstellt werden.");
@@ -78,16 +93,15 @@ export function VaultOnboarding({
     }
   }
 
+  /**
+   * 1-Click Ephemeral Sandbox: generates a real keypair strictly in-memory
+   * without storing any hardcoded-password vault into LocalStorage.
+   */
   async function handleQuickStart() {
     setError(null);
     setBusy(true);
     try {
-      const unlocked = await createKeypairFromSecretHex();
-      await encryptAndSaveVault(
-        unlocked.profile.secretKeyHex,
-        unlocked.profile.solanaAddress,
-        "sunveil-devnet",
-      );
+      const { unlocked } = await createKeypairFromSecretHex(undefined, { isEphemeral: true });
       onUnlocked(unlocked);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fehler beim Erstellen.");
@@ -151,6 +165,7 @@ export function VaultOnboarding({
                 </label>
                 <input
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Passwort eingeben…"
@@ -174,17 +189,47 @@ export function VaultOnboarding({
                 {busy ? "Entschlüssele lokal…" : "Wallet entsperren"}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  clearStoredVault();
-                  onVaultCleared();
-                }}
-                className="w-full py-2.5 rounded-xl text-xs text-zinc-500 hover:text-red-400 transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Lokalen Tresor zurücksetzen &amp; neue Wallet erstellen
-              </button>
+              {!confirmReset ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(true)}
+                  className="w-full py-2.5 rounded-xl text-xs text-zinc-500 hover:text-red-400 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Lokalen Tresor zurücksetzen &amp; neue Wallet erstellen
+                </button>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-red-950/35 border border-red-500/35 space-y-2.5 text-xs">
+                  <div className="flex items-start gap-2 text-red-200">
+                    <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Achtung:</strong> Löscht deinen lokalen Tresor unwiderruflich. Nur
+                      fortfahren, wenn dein Ed25519-Seed gesichert ist!
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearStoredVault();
+                        setConfirmReset(false);
+                        setPassword("");
+                        onVaultCleared();
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold cursor-pointer"
+                    >
+                      Ja, endgültig löschen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(false)}
+                      className="px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 cursor-pointer"
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                </div>
+              )}
             </form>
           ) : (
             <div className="space-y-5">
@@ -228,6 +273,8 @@ export function VaultOnboarding({
                     </label>
                     <input
                       type="password"
+                      autoComplete="off"
+                      spellCheck={false}
                       value={importHex}
                       onChange={(e) => setImportHex(e.target.value)}
                       placeholder="64-stelliger Hex-Seed…"
@@ -238,13 +285,28 @@ export function VaultOnboarding({
 
                 <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-2">
-                    Tresor-Passwort festlegen (AES-256-GCM lokal)
+                    Tresor-Passwort festlegen (AES-256-GCM · 600k PBKDF2)
                   </label>
                   <input
                     type="password"
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Mind. 4 Zeichen…"
+                    placeholder={`Mind. ${MIN_VAULT_PASSWORD_LENGTH} Zeichen…`}
+                    className="w-full px-4 py-3 rounded-xl bg-[#09090d] border border-zinc-800 focus:border-[#ff5500] focus:outline-none text-white placeholder:text-zinc-600 text-sm transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">
+                    Tresor-Passwort bestätigen
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Passwort wiederholen…"
                     className="w-full px-4 py-3 rounded-xl bg-[#09090d] border border-zinc-800 focus:border-[#ff5500] focus:outline-none text-white placeholder:text-zinc-600 text-sm transition"
                   />
                 </div>
@@ -262,7 +324,7 @@ export function VaultOnboarding({
                 >
                   <KeyRound className="w-4 h-4" />
                   {busy
-                    ? "Generiere Shielded Keypair…"
+                    ? "Verschlüssele Tresor lokal…"
                     : mode === "create"
                       ? "Private Wallet lokal erzeugen"
                       : "Wallet importieren & verschlüsseln"}
@@ -272,7 +334,7 @@ export function VaultOnboarding({
               <div className="relative flex items-center py-1">
                 <div className="flex-grow border-t border-zinc-800/80" />
                 <span className="mx-3 text-[11px] uppercase tracking-wider text-zinc-500">
-                  oder sofort testen
+                  oder sofort risikofrei testen
                 </span>
                 <div className="flex-grow border-t border-zinc-800/80" />
               </div>
@@ -283,7 +345,8 @@ export function VaultOnboarding({
                 disabled={busy}
                 className="w-full py-3 rounded-xl bg-zinc-900/90 hover:bg-zinc-800/90 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-200 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
               >
-                1-Klick Sandbox starten (Demo-Passwort: <span className="font-mono text-[#ff8533]">sunveil-devnet</span>)
+                1-Klick Sandbox starten{" "}
+                <span className="text-zinc-400 font-normal">(temporär im RAM · kein Key gespeichert)</span>
               </button>
             </div>
           )}

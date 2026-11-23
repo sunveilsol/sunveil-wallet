@@ -1,4 +1,4 @@
-const CACHE_NAME = "sunveil-pwa-v3";
+const CACHE_NAME = "sunveil-pwa-v4";
 const SHELL_ASSETS = [
   "/",
   "/manifest.webmanifest",
@@ -33,10 +33,12 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  // Never cache cross-origin RPC or Helius API calls
+  // Never intercept or cache cross-origin RPC/API calls
   if (url.origin !== self.location.origin) return;
+  // Never cache URLs with query parameters (e.g. ?pay=...&handle=...&amount=...)
+  if (url.search) return;
 
-  // Network-first for HTML & JS bundles so updates go live immediately
+  // Network-first for HTML & JS bundles so security updates go live immediately
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -46,6 +48,8 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request)),
+      .catch(() =>
+        caches.match(request).then((cached) => cached || caches.match("/")),
+      ),
   );
 });

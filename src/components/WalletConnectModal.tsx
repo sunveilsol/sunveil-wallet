@@ -49,8 +49,15 @@ export function WalletConnectModal({
     setError(null);
     setWallets(detectSolanaWallets());
     const t = window.setTimeout(() => setWallets(detectSolanaWallets()), 350);
-    return () => window.clearTimeout(t);
-  }, [open]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -232,7 +239,7 @@ export function WalletConnectModal({
                   <a
                     href="https://faucet.solana.com/"
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[11px] text-[#ff8533] hover:underline"
                   >
                     Kostenlose Devnet-SOL holen

@@ -18,7 +18,8 @@ export interface ActivityItem {
 }
 
 export interface EncryptedVaultRecord {
-  version: 1;
+  version: 1 | 2;
+  iterations?: number;
   salt: string;
   iv: string;
   ciphertext: string;
@@ -31,5 +32,4 @@ export interface WalletProfile {
   shieldedAddressHex: string;
   viewingPublicKeyHex: string;
   ownerHashHex: string;
-  secretKeyHex: string;
 }

@@ -16,6 +16,14 @@
           "value": "nosniff"
         },
         {
+          "key": "X-Permitted-Cross-Domain-Policies",
+          "value": "none"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin-allow-popups"
+        },
+        {
           "key": "Referrer-Policy",
           "value": "no-referrer"
         },

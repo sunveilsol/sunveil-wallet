@@ -7,6 +7,8 @@
  * read-only JSON-RPC balance queries.
  */
 
+import { isValidSolanaAddress } from "./sprService";
+
 export type ExternalWalletId =
   | "phantom"
   | "solflare"
@@ -119,7 +121,11 @@ function extractAddress(
 ): string {
   const pk = (res && "publicKey" in res ? res.publicKey : null) ?? provider.publicKey;
   if (!pk) throw new Error("Wallet hat keine Public-Key-Adresse zurückgegeben.");
-  return typeof pk.toBase58 === "function" ? pk.toBase58() : pk.toString();
+  const addr = typeof pk.toBase58 === "function" ? pk.toBase58() : pk.toString();
+  if (!isValidSolanaAddress(addr)) {
+    throw new Error("Wallet hat eine ungültige Solana-Adresse zurückgegeben.");
+  }
+  return addr.trim();
 }
 
 function makeLegacyConnector(provider: LegacySolanaProvider) {
@@ -147,10 +153,10 @@ function makeStandardConnector(wallet: StandardWallet) {
       }
       const result = await connectFeat.connect();
       const account = result.accounts?.[0] ?? wallet.accounts?.[0];
-      if (!account?.address) {
-        throw new Error(`${wallet.name} hat keinen Account freigegeben.`);
+      if (!account?.address || !isValidSolanaAddress(account.address)) {
+        throw new Error(`${wallet.name} hat keine gültige Solana-Adresse freigegeben.`);
       }
-      return account.address;
+      return account.address.trim();
     },
     disconnect: async () => {
       try {
@@ -278,9 +284,10 @@ export async function fetchPublicSolBalance(
   address: string,
   rpcUrl: string,
 ): Promise<number | null> {
+  if (!isValidSolanaAddress(address)) return null;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 7000);
   try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 7000);
     const res = await fetch(rpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -288,18 +295,19 @@ export async function fetchPublicSolBalance(
         jsonrpc: "2.0",
         id: 1,
         method: "getBalance",
-        params: [address, { commitment: "confirmed" }],
+        params: [address.trim(), { commitment: "confirmed" }],
       }),
       signal: controller.signal,
     });
-    window.clearTimeout(timer);
     if (!res.ok) return null;
     const json = (await res.json()) as { result?: { value?: number } };
     const lamports = json.result?.value;
-    if (typeof lamports !== "number") return null;
+    if (typeof lamports !== "number" || !Number.isFinite(lamports) || lamports < 0) return null;
     return lamports / LAMPORTS_PER_SOL;
   } catch {
     return null;
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 

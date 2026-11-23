@@ -236,7 +236,7 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
             <a
               href={X_URL}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-[#ff8533] hover:text-[#ffaa66] transition"
             >
               @SunVeilSol
@@ -315,7 +315,7 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
               <a
                 href={X_URL}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="px-5 py-3.5 rounded-2xl bg-[#111117] hover:bg-[#171720] border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-200 text-sm font-semibold flex items-center gap-2 transition"
               >
                 <span>{t.ctaSecondary}</span>
@@ -556,7 +556,7 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
             <a
               href="https://github.com/sunveilsol/sunveil-wallet"
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="text-zinc-400 hover:text-white font-medium transition-colors"
             >
               GitHub (Open Source)
@@ -565,7 +565,7 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
             <a
               href={X_URL}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="text-[#ff8533] hover:text-[#ffaa66] font-medium"
             >
               x.com/SunVeilSol

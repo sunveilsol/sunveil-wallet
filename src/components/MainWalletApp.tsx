@@ -30,15 +30,24 @@ import type {
 } from "../types";
 import {
   clearStoredVault,
+  decryptVault,
   formatSol,
+  loadEncryptedVault,
   loadSavedApiKey,
   loadSavedHandle,
+  sanitizeErrorMessage,
+  sanitizeHandle,
   saveApiKey,
   saveHandle,
   shortAddr,
   type UnlockedWallet,
 } from "../lib/vault";
-import { DevnetSprSession, isValidSolanaAddress } from "../lib/sprService";
+import {
+  DevnetSprSession,
+  isValidSolanaAddress,
+  lamportsToSolNumber,
+  parseSolToLamports,
+} from "../lib/sprService";
 import type { ConnectedExternalWallet } from "../lib/externalWallet";
 import { QrCode } from "./QrCode";
 import { WalletConnectModal } from "./WalletConnectModal";
@@ -104,9 +113,11 @@ export function MainWalletApp({
   const [devnetReady, setDevnetReady] = useState(false);
   const [devnetStatus, setDevnetStatus] = useState<string | null>(null);
 
-  // Balances & History
-  const [publicSol, setPublicSol] = useState<number>(1.75);
-  const [privateSol, setPrivateSol] = useState<number>(4.35);
+  // Balances & History (exact BigInt lamports alongside display SOL)
+  const [publicLamports, setPublicLamports] = useState<bigint>(1_750_000_000n);
+  const [privateLamports, setPrivateLamports] = useState<bigint>(4_350_000_000n);
+  const publicSol = lamportsToSolNumber(publicLamports);
+  const privateSol = lamportsToSolNumber(privateLamports);
   const [utxoCount, setUtxoCount] = useState<number>(2);
   const [history, setHistory] = useState<ActivityItem[]>(DEMO_INITIAL_HISTORY);
 
@@ -115,6 +126,10 @@ export function MainWalletApp({
   const [recipientInput, setRecipientInput] = useState("");
   const [amountInput, setAmountInput] = useState("0.25");
   const [memoInput, setMemoInput] = useState("");
+  const [payLinkNotice, setPayLinkNotice] = useState<{
+    address: string;
+    handle?: string;
+  } | null>(null);
   const [txBusy, setTxBusy] = useState(false);
   const [txStep, setTxStep] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -125,7 +140,12 @@ export function MainWalletApp({
 
   // Security UI & External Wallet
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [revealSecret, setRevealSecret] = useState(false);
+  const [revealedSeed, setRevealedSeed] = useState<string | null>(null);
+  const [seedPasswordInput, setSeedPasswordInput] = useState("");
+  const [seedRevealPromptOpen, setSeedRevealPromptOpen] = useState(false);
+  const [seedRevealBusy, setSeedRevealBusy] = useState(false);
+  const [seedRevealError, setSeedRevealError] = useState<string | null>(null);
+  const [confirmWipe, setConfirmWipe] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<ConnectedExternalWallet | null>(null);
   const [legalOpen, setLegalOpen] = useState(false);
@@ -137,54 +157,92 @@ export function MainWalletApp({
     }, 5200);
   }, []);
 
-  // Read & strictly validate incoming Pay-Link query params (?pay=<address>&amount=<sol>&handle=<name>)
+  // Auto-hide revealed secret seed after 30s or immediately when leaving Security tab
+  useEffect(() => {
+    if (tab !== "security") {
+      setRevealedSeed(null);
+      setSeedRevealPromptOpen(false);
+      setSeedPasswordInput("");
+      setSeedRevealError(null);
+      setConfirmWipe(false);
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (!revealedSeed) return;
+    const t = window.setTimeout(() => {
+      setRevealedSeed(null);
+      showToast("ok", "Geheimer Seed aus Sicherheitsgründen automatisch ausgeblendet.");
+    }, 30_000);
+    return () => window.clearTimeout(t);
+  }, [revealedSeed, showToast]);
+
+  // Read, strictly validate & strip incoming Pay-Link query params (?pay=<address>&amount=<sol>&handle=<name>)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const payAddr = params.get("pay")?.trim();
     const payAmtRaw = params.get("amount")?.trim();
     const payHandleRaw = params.get("handle")?.trim();
-    if (payAddr && isValidSolanaAddress(payAddr)) {
+    if (!payAddr) return;
+
+    // Strip untrusted query parameters from the URL bar once consumed
+    window.history.replaceState(null, "", `${window.location.pathname}#app`);
+
+    if (isValidSolanaAddress(payAddr)) {
       setRecipientInput(payAddr);
       if (payAmtRaw) {
-        const parsedAmt = Number(payAmtRaw);
-        if (Number.isFinite(parsedAmt) && parsedAmt > 0 && parsedAmt <= 10_000) {
-          setAmountInput(String(parsedAmt));
+        const lam = parseSolToLamports(payAmtRaw);
+        if (lam !== null && lam <= 10_000_000_000_000n) {
+          setAmountInput(payAmtRaw.replace(",", "."));
         }
       }
-      if (payHandleRaw) {
-        const safeHandle = payHandleRaw.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 32);
-        if (safeHandle) {
-          setMemoInput(`Private Pay-Link an @${safeHandle}`);
-        }
+      const safeHandle = payHandleRaw ? sanitizeHandle(payHandleRaw) : "";
+      if (safeHandle) {
+        setMemoInput(`Private Pay-Link an @${safeHandle}`);
       }
+      setPayLinkNotice({ address: payAddr, handle: safeHandle || undefined });
       setTxAction("privateSend");
       setTab("transact");
       showToast(
         "ok",
         "Pay-Link geladen — bitte Empfänger-Adresse & Betrag vor dem Senden genau prüfen!",
       );
-    } else if (payAddr) {
+    } else {
       showToast("err", "Ungültige Solana-Adresse im Pay-Link ignoriert.");
     }
   }, [showToast]);
 
-  // Automatic vault lock after 15 minutes of inactivity
+  // Sleep-safe automatic vault lock after 15 minutes of wall-clock inactivity
   useEffect(() => {
     const IDLE_LOCK_MS = 15 * 60 * 1000;
-    let timer = window.setTimeout(onLock, IDLE_LOCK_MS);
-    const resetTimer = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(onLock, IDLE_LOCK_MS);
+    let lastActivityAt = Date.now();
+
+    const checkLock = () => {
+      if (Date.now() - lastActivityAt >= IDLE_LOCK_MS) {
+        setRevealedSeed(null);
+        onLock();
+      }
     };
-    const events: (keyof WindowEventMap)[] = [
-      "pointerdown",
-      "keydown",
-      "touchstart",
-    ];
-    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+    const markActive = () => {
+      lastActivityAt = Date.now();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        checkLock();
+      }
+    };
+
+    const interval = window.setInterval(checkLock, 30_000);
+    const events: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "touchstart"];
+    events.forEach((ev) => window.addEventListener(ev, markActive, { passive: true }));
+    window.addEventListener("focus", checkLock);
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
-      window.clearTimeout(timer);
-      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+      window.clearInterval(interval);
+      events.forEach((ev) => window.removeEventListener(ev, markActive));
+      window.removeEventListener("focus", checkLock);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [onLock]);
 
@@ -205,16 +263,15 @@ export function MainWalletApp({
           sessionRef.current = await DevnetSprSession.connect(key, unlocked.keypair);
         }
         const state = await sessionRef.current.fetchState(requireSlot);
-        setPublicSol(state.publicSol);
-        setPrivateSol(state.privateSol);
+        setPublicLamports(state.publicLamports);
+        setPrivateLamports(state.privateLamports);
         setUtxoCount(state.utxoCount);
         setHistory(state.history);
         setDevnetReady(true);
         setDevnetStatus("Verbunden · Helius Devnet + TEE Prover aktiv");
       } catch (err) {
         setDevnetReady(false);
-        const msg = err instanceof Error ? err.message : "Devnet-Sync fehlgeschlagen.";
-        setDevnetStatus(msg);
+        setDevnetStatus(sanitizeErrorMessage(err, "Devnet-Sync fehlgeschlagen."));
       } finally {
         setSyncing(false);
       }
@@ -230,23 +287,65 @@ export function MainWalletApp({
       sessionRef.current = null;
       setDevnetReady(false);
       setDevnetStatus(null);
-      setPublicSol(1.75);
-      setPrivateSol(4.35);
+      setPublicLamports(1_750_000_000n);
+      setPrivateLamports(4_350_000_000n);
       setUtxoCount(2);
       setHistory(DEMO_INITIAL_HISTORY);
     }
   }, [networkMode, refreshDevnet]);
 
-  function handleCopy(id: string, value: string, label: string) {
-    navigator.clipboard.writeText(value);
-    setCopiedId(id);
-    showToast("ok", `${label} kopiert.`);
-    window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1800);
+  async function handleCopy(
+    id: string,
+    value: string,
+    label: string,
+    options?: { clearAfterMs?: number },
+  ) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedId(id);
+      showToast(
+        "ok",
+        options?.clearAfterMs
+          ? `${label} kopiert (Zwischenablage wird nach 30 Sek. automatisch geleert).`
+          : `${label} kopiert.`,
+      );
+      window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1800);
+      if (options?.clearAfterMs) {
+        window.setTimeout(() => {
+          void navigator.clipboard.writeText("").catch(() => {});
+        }, options.clearAfterMs);
+      }
+    } catch {
+      showToast("err", "Zwischenablage konnte nicht beschrieben werden.");
+    }
+  }
+
+  async function handleRevealSeedSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const record = loadEncryptedVault();
+    if (!record) {
+      setSeedRevealError("Kein lokal gespeicherter Tresor vorhanden.");
+      return;
+    }
+    setSeedRevealError(null);
+    setSeedRevealBusy(true);
+    try {
+      const secretHex = await decryptVault(record, seedPasswordInput);
+      setRevealedSeed(secretHex);
+      setSeedPasswordInput("");
+      setSeedRevealPromptOpen(false);
+    } catch (err) {
+      setSeedRevealError(
+        err instanceof Error ? err.message : "Passwort falsch — Seed bleibt gesperrt.",
+      );
+    } finally {
+      setSeedRevealBusy(false);
+    }
   }
 
   async function handleFaucet() {
     if (networkMode === "demo") {
-      setPublicSol((v) => +(v + 2).toFixed(4));
+      setPublicLamports((v) => v + 2_000_000_000n);
       setHistory((prev) => [
         {
           id: `airdrop-${Date.now()}`,
@@ -276,9 +375,10 @@ export function MainWalletApp({
     } catch (err) {
       showToast(
         "err",
-        err instanceof Error
-          ? `Airdrop-Limit erreicht? Nutze faucet.solana.com (${err.message})`
-          : "Devnet Airdrop fehlgeschlagen.",
+        `Airdrop-Limit erreicht? Nutze faucet.solana.com (${sanitizeErrorMessage(
+          err,
+          "Devnet Airdrop fehlgeschlagen.",
+        )})`,
       );
     } finally {
       setSyncing(false);
@@ -287,17 +387,18 @@ export function MainWalletApp({
 
   async function handleExecuteTx(e: React.FormEvent) {
     e.preventDefault();
-    const amount = parseFloat(amountInput.replace(",", "."));
-    if (!Number.isFinite(amount) || amount <= 0) {
-      showToast("err", "Bitte einen gültigen SOL-Betrag > 0 eingeben.");
+    const amountLamports = parseSolToLamports(amountInput);
+    if (amountLamports === null) {
+      showToast("err", "Bitte einen gültigen SOL-Betrag > 0 eingeben (max. 9 Nachkommastellen).");
       return;
     }
+    const amount = lamportsToSolNumber(amountLamports);
 
-    if (txAction === "shield" && amount > publicSol) {
+    if (txAction === "shield" && amountLamports > publicLamports) {
       showToast("err", "Nicht genügend Public SOL für diesen Shield-Deposit.");
       return;
     }
-    if ((txAction === "privateSend" || txAction === "unshield") && amount > privateSol) {
+    if ((txAction === "privateSend" || txAction === "unshield") && amountLamports > privateLamports) {
       showToast("err", "Nicht genügend Shielded (Private) SOL verfügbar.");
       return;
     }
@@ -312,7 +413,7 @@ export function MainWalletApp({
       return;
     }
 
-    if (networkMode === "devnet" && txAction !== "shield" && !isValidSolanaAddress(targetAddr)) {
+    if (txAction !== "shield" && !isValidSolanaAddress(targetAddr)) {
       showToast("err", "Ungültige Solana-Adresse (Base58).");
       return;
     }
@@ -324,8 +425,8 @@ export function MainWalletApp({
         if (txAction === "shield") {
           setTxStep("Erzeuge verschlüsselten Output-UTXO & signiere lokal (Ed25519)…");
           await new Promise((r) => setTimeout(r, 650));
-          setPublicSol((v) => +(v - amount).toFixed(4));
-          setPrivateSol((v) => +(v + amount).toFixed(4));
+          setPublicLamports((v) => v - amountLamports);
+          setPrivateLamports((v) => v + amountLamports);
           setUtxoCount((c) => c + 1);
           setHistory((prev) => [
             {
@@ -348,7 +449,7 @@ export function MainWalletApp({
           const t0 = performance.now();
           await new Promise((r) => setTimeout(r, 750));
           const proofMs = Math.round(performance.now() - t0);
-          setPrivateSol((v) => +(v - amount).toFixed(4));
+          setPrivateLamports((v) => v - amountLamports);
           setHistory((prev) => [
             {
               id: `tx-${Date.now()}`,
@@ -368,9 +469,9 @@ export function MainWalletApp({
         } else {
           setTxStep("Erzeuge Groth16 Withdrawal-Proof…");
           await new Promise((r) => setTimeout(r, 850));
-          setPrivateSol((v) => +(v - amount).toFixed(4));
+          setPrivateLamports((v) => v - amountLamports);
           if (targetAddr === unlocked.profile.solanaAddress) {
-            setPublicSol((v) => +(v + amount).toFixed(4));
+            setPublicLamports((v) => v + amountLamports);
           }
           setHistory((prev) => [
             {
@@ -389,6 +490,7 @@ export function MainWalletApp({
           showToast("ok", `${formatSol(amount)} SOL erfolgreich ent-shieldet (Unshield).`);
         }
         setMemoInput("");
+        setPayLinkNotice(null);
         setTab("vault");
         return;
       }
@@ -400,29 +502,33 @@ export function MainWalletApp({
 
       if (txAction === "shield") {
         setTxStep("Prüfe Registry & sende Deposit an Solana Privacy Program…");
-        const { signature, slot } = await sessionRef.current.shieldSol(amount);
+        const { signature, slot } = await sessionRef.current.shieldLamports(amountLamports);
         setTxStep("Synchronisiere Photon Indexer…");
         await refreshDevnet(slot);
         showToast("ok", `Shield bestätigt! Tx: ${shortAddr(signature)}`);
       } else if (txAction === "privateSend") {
         setTxStep("Erzeuge Groth16 Proof via Helius TEE Prover & signiere lokal…");
-        const { signature, slot } = await sessionRef.current.sendPrivateSol(targetAddr, amount);
+        const { signature, slot } = await sessionRef.current.sendPrivateLamports(
+          targetAddr,
+          amountLamports,
+        );
         setTxStep("Synchronisiere verschlüsselte UTXOs…");
         await refreshDevnet(slot);
         showToast("ok", `Privater Transfer bestätigt! Tx: ${shortAddr(signature)}`);
       } else {
         setTxStep("Erzeuge Groth16 Withdrawal-Proof & zahle öffentlich aus…");
-        const { signature, slot } = await sessionRef.current.unshieldSol(targetAddr, amount);
+        const { signature, slot } = await sessionRef.current.unshieldLamports(
+          targetAddr,
+          amountLamports,
+        );
         setTxStep("Synchronisiere Balances…");
         await refreshDevnet(slot);
         showToast("ok", `Unshield bestätigt! Tx: ${shortAddr(signature)}`);
       }
+      setPayLinkNotice(null);
       setTab("vault");
     } catch (err) {
-      showToast(
-        "err",
-        err instanceof Error ? err.message : "Transaktion fehlgeschlagen.",
-      );
+      showToast("err", sanitizeErrorMessage(err, "Transaktion fehlgeschlagen."));
     } finally {
       setTxBusy(false);
       setTxStep(null);
@@ -436,10 +542,11 @@ export function MainWalletApp({
     const base = `${window.location.origin}${window.location.pathname}`;
     const q = new URLSearchParams({
       pay: unlocked.profile.solanaAddress,
-      handle: xHandle || "sunveil",
+      handle: sanitizeHandle(xHandle) || "sunveil",
     });
-    if (payLinkPresetAmount && parseFloat(payLinkPresetAmount) > 0) {
-      q.set("amount", payLinkPresetAmount);
+    const normalizedAmt = payLinkPresetAmount.trim().replace(",", ".");
+    if (normalizedAmt && parseSolToLamports(normalizedAmt) !== null) {
+      q.set("amount", normalizedAmt);
     }
     return `${base}?${q.toString()}`;
   }, [unlocked.profile.solanaAddress, xHandle, payLinkPresetAmount]);
@@ -581,10 +688,17 @@ export function MainWalletApp({
         <div className="flex flex-wrap items-center justify-between gap-2 mb-5 sm:mb-6 px-3.5 sm:px-4 py-2.5 rounded-2xl bg-[#0e0e13]/90 border border-zinc-800/80 text-xs">
           <div className="flex items-center gap-2 text-zinc-300">
             <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>
-              <strong className="text-white">Self-Custody aktiv:</strong> Keys liegen ausschließlich
-              AES-256-verschlüsselt in deinem Browser.
-            </span>
+            {unlocked.isEphemeral ? (
+              <span>
+                <strong className="text-[#ff944d]">Temporäre Sandbox-Session:</strong> Key existiert
+                nur im Arbeitsspeicher — nicht dauerhaft gespeichert.
+              </span>
+            ) : (
+              <span>
+                <strong className="text-white">Self-Custody aktiv:</strong> Keys liegen
+                ausschließlich AES-256-GCM-verschlüsselt in deinem Browser.
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -766,7 +880,7 @@ export function MainWalletApp({
 
             {/* Activity Feed */}
             <section className="ember-card rounded-3xl p-6">
-              <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center justify-between gap-3 mb-5">
                 <div>
                   <h2 className="text-base font-semibold text-white">
                     Aktivität &amp; ZK-Protokoll
@@ -775,7 +889,7 @@ export function MainWalletApp({
                     Lokal mit deinem Viewing Key entschlüsselt
                   </p>
                 </div>
-                <span className="text-[11px] font-mono text-zinc-500">
+                <span className="text-[11px] font-mono text-zinc-500 whitespace-nowrap shrink-0">
                   {history.length} Einträge
                 </span>
               </div>
@@ -872,9 +986,9 @@ export function MainWalletApp({
                           </div>
                           {networkMode === "devnet" ? (
                             <a
-                              href={`https://solscan.io/tx/${item.signature}?cluster=devnet`}
+                              href={`https://solscan.io/tx/${encodeURIComponent(item.signature)}?cluster=devnet`}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-500 hover:text-[#ff8533] mt-0.5"
                             >
                               {shortAddr(item.signature, 4, 4)}
@@ -923,6 +1037,21 @@ export function MainWalletApp({
                   </button>
                 ))}
               </div>
+
+              {payLinkNotice && txAction === "privateSend" && (
+                <div className="p-3.5 rounded-2xl bg-[#ff5500]/12 border border-[#ff5500]/45 text-xs text-zinc-200 flex items-start gap-2.5">
+                  <ShieldAlert className="w-4 h-4 text-[#ff8533] shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <div className="font-semibold text-[#ff944d]">
+                      Externer Pay-Link vorausgefüllt
+                      {payLinkNotice.handle ? ` (@${payLinkNotice.handle})` : ""}
+                    </div>
+                    <p className="text-zinc-400 mt-0.5 leading-relaxed">
+                      Prüfe Empfänger-Adresse und Betrag sorgfältig, bevor du auf Senden klickst.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <h2 className="text-lg font-semibold text-white">
@@ -1083,14 +1212,15 @@ export function MainWalletApp({
                 </div>
               </div>
 
-              <div className="ember-card rounded-3xl p-5 text-xs text-zinc-400 leading-relaxed">
-                <div className="text-zinc-200 font-semibold mb-1.5">
-                  Pro-Tipp für Monetarisierung (später)
+              <div className="ember-card rounded-3xl p-5 text-xs text-zinc-400 leading-relaxed space-y-1.5">
+                <div className="text-zinc-200 font-semibold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  100 % Client-Side Groth16 Verifikation
                 </div>
-                Das Helius-SDK bietet{" "}
-                <span className="font-mono text-[#ff8533]">buildMultiTransferTransaction</span>:
-                Damit lässt sich auf Wunsch transparent eine winzige App-Gebühr (z. B. 0,15 %) in
-                derselben privaten ZK-Transaktion mitsenden — ohne jemals Nutzer-Keys zu halten.
+                <p>
+                  SUNVEIL signiert jede Transaktion ausschließlich lokal in deinem Browser. Weder
+                  Betrag noch dein privater Seed werden jemals an SUNVEIL-Server übertragen.
+                </p>
               </div>
             </aside>
           </div>
@@ -1245,7 +1375,7 @@ export function MainWalletApp({
                 <a
                   href="https://dashboard.helius.dev"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="text-[#ff8533] hover:underline inline-flex items-center gap-0.5"
                 >
                   dashboard.helius.dev
@@ -1261,6 +1391,7 @@ export function MainWalletApp({
                 </label>
                 <input
                   type="password"
+                  autoComplete="off"
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
@@ -1272,14 +1403,18 @@ export function MainWalletApp({
                 <button
                   type="button"
                   onClick={() => {
-                    saveApiKey(apiKeyInput);
-                    if (apiKeyInput.trim()) {
-                      sessionRef.current = null;
-                      setNetworkMode("devnet");
-                      showToast("ok", "Helius API-Key gespeichert — verbinde mit Devnet…");
-                    } else {
-                      setNetworkMode("demo");
-                      showToast("ok", "API-Key entfernt — zurück im Sandbox Demo-Modus.");
+                    try {
+                      saveApiKey(apiKeyInput);
+                      if (apiKeyInput.trim()) {
+                        sessionRef.current = null;
+                        setNetworkMode("devnet");
+                        showToast("ok", "Helius API-Key gespeichert — verbinde mit Devnet…");
+                      } else {
+                        setNetworkMode("demo");
+                        showToast("ok", "API-Key entfernt — zurück im Sandbox Demo-Modus.");
+                      }
+                    } catch (err) {
+                      showToast("err", sanitizeErrorMessage(err, "Ungültiger API-Key."));
                     }
                   }}
                   className="flex-1 py-3 rounded-xl ember-btn-primary text-white text-xs font-semibold cursor-pointer"
@@ -1352,55 +1487,137 @@ export function MainWalletApp({
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-500/25 overflow-hidden">
-                  <div className="flex items-center justify-between gap-2 text-red-300 mb-1.5">
+                <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-500/25 overflow-hidden space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 text-red-300">
                     <span className="font-semibold">Privater Ed25519 Seed (Geheim!)</span>
-                    <button
-                      type="button"
-                      onClick={() => setRevealSecret((r) => !r)}
-                      className="text-xs text-red-300 hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
-                    >
-                      {revealSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      {revealSecret ? "Verbergen" : "Anzeigen"}
-                    </button>
+                    {!unlocked.isEphemeral && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (revealedSeed) {
+                            setRevealedSeed(null);
+                          } else {
+                            setSeedRevealError(null);
+                            setSeedRevealPromptOpen((v) => !v);
+                          }
+                        }}
+                        className="text-xs text-red-300 hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        {revealedSeed ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                        {revealedSeed ? "Verbergen" : "Anzeigen"}
+                      </button>
+                    )}
                   </div>
-                  <div
-                    className={`font-mono text-[11px] text-red-200/90 ${
-                      revealSecret
-                        ? "break-all [overflow-wrap:anywhere]"
-                        : "tracking-widest break-words select-none opacity-80"
-                    }`}
-                  >
-                    {revealSecret
-                      ? unlocked.profile.secretKeyHex
-                      : "•••• •••• •••• •••• •••• •••• •••• ••••"}
-                  </div>
-                  {revealSecret && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy("sec-seed", unlocked.profile.secretKeyHex, "Geheimer Seed")
-                      }
-                      className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-red-300 hover:text-white cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Seed für Backup kopieren (niemals teilen!)
-                    </button>
+
+                  {unlocked.isEphemeral ? (
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      Du bist in einer temporären Sandbox-Session ohne gespeicherten Tresor.
+                      Erstelle eine Passwort-geschützte Wallet, bevor du echte Devnet-SOL nutzt.
+                    </p>
+                  ) : revealedSeed ? (
+                    <>
+                      <div className="font-mono text-[11px] text-red-200/90 break-all [overflow-wrap:anywhere]">
+                        {revealedSeed}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void handleCopy("sec-seed", revealedSeed, "Geheimer Seed", {
+                            clearAfterMs: 30_000,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 text-[11px] text-red-300 hover:text-white cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Seed für Backup kopieren (auto-clear nach 30 Sek.)
+                      </button>
+                    </>
+                  ) : seedRevealPromptOpen ? (
+                    <form onSubmit={handleRevealSeedSubmit} className="space-y-2">
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={seedPasswordInput}
+                        onChange={(e) => setSeedPasswordInput(e.target.value)}
+                        placeholder="Tresor-Passwort zur Bestätigung…"
+                        className="w-full px-3 py-2 rounded-lg bg-[#09090d] border border-red-500/35 focus:border-red-400 focus:outline-none text-white text-xs"
+                      />
+                      {seedRevealError && (
+                        <div className="text-[11px] text-red-300">{seedRevealError}</div>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          disabled={seedRevealBusy || !seedPasswordInput}
+                          className="flex-1 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
+                        >
+                          {seedRevealBusy ? "Prüfe…" : "Für 30 Sek. entsperren"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSeedRevealPromptOpen(false);
+                            setSeedPasswordInput("");
+                            setSeedRevealError(null);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs cursor-pointer"
+                        >
+                          Abbrechen
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="font-mono text-[11px] text-red-200/90 tracking-widest break-words select-none opacity-80">
+                      •••• •••• •••• •••• •••• •••• •••• ••••
+                    </div>
                   )}
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  clearStoredVault();
-                  onResetVault();
-                }}
-                className="w-full py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Lokale Wallet löschen
-              </button>
+              {!confirmWipe ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmWipe(true)}
+                  className="w-full py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {unlocked.isEphemeral ? "Sandbox beenden & neue Wallet erstellen" : "Lokale Wallet löschen"}
+                </button>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-red-950/35 border border-red-500/40 space-y-2.5 text-xs">
+                  <div className="flex items-start gap-2 text-red-200">
+                    <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Wirklich löschen?</strong> Dein lokaler Tresor wird dauerhaft entfernt.
+                      Ohne Seed-Backup ist kein Zugriff mehr möglich!
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRevealedSeed(null);
+                        clearStoredVault();
+                        onResetVault();
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold cursor-pointer"
+                    >
+                      Ja, unwiderruflich löschen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmWipe(false)}
+                      className="px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 cursor-pointer"
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1420,7 +1637,7 @@ export function MainWalletApp({
           <a
             href="https://github.com/sunveilsol/sunveil-wallet"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="hover:text-zinc-200 transition"
           >
             GitHub

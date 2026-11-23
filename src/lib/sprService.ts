@@ -23,18 +23,46 @@ import {
 } from "@solana/kit";
 import type { ActivityItem } from "../types";
 
-const LAMPORTS_PER_SOL = 1_000_000_000;
+const LAMPORTS_PER_SOL_NUM = 1_000_000_000;
+const LAMPORTS_PER_SOL_BIGINT = 1_000_000_000n;
+const MAX_SOL_AMOUNT = 1_000_000n * LAMPORTS_PER_SOL_BIGINT;
+
+/**
+ * Exact, string-based SOL -> lamports parser using BigInt arithmetic.
+ * Eliminates IEEE-754 floating-point drift and rejects malformed strings like "1.5abc".
+ */
+export function parseSolToLamports(input: string): bigint | null {
+  const normalized = input.trim().replace(",", ".");
+  if (!/^\d+(\.\d{1,9})?$/.test(normalized)) {
+    return null;
+  }
+  const [wholePart, fracPart = ""] = normalized.split(".");
+  const paddedFrac = fracPart.padEnd(9, "0");
+  const total = BigInt(wholePart) * LAMPORTS_PER_SOL_BIGINT + BigInt(paddedFrac);
+  if (total <= 0n || total > MAX_SOL_AMOUNT) {
+    return null;
+  }
+  return total;
+}
 
 export function solToLamports(sol: number): bigint {
-  return BigInt(Math.round(sol * LAMPORTS_PER_SOL));
+  if (!Number.isFinite(sol) || sol <= 0) {
+    throw new Error("Ungültiger SOL-Betrag.");
+  }
+  const parsed = parseSolToLamports(sol.toFixed(9));
+  if (parsed === null) {
+    throw new Error("SOL-Betrag außerhalb des gültigen Bereichs.");
+  }
+  return parsed;
 }
 
 export function lamportsToSolNumber(l: bigint): number {
-  return Number(l) / LAMPORTS_PER_SOL;
+  return Number(l) / LAMPORTS_PER_SOL_NUM;
 }
 
 export function isValidSolanaAddress(value: string): boolean {
-  return isAddress(value.trim());
+  const trimmed = value.trim();
+  return trimmed.length >= 32 && trimmed.length <= 44 && isAddress(trimmed);
 }
 
 export class DevnetSprSession {
@@ -58,7 +86,11 @@ export class DevnetSprSession {
   }
 
   static async connect(apiKey: string, keypair: ShieldedKeypair): Promise<DevnetSprSession> {
-    const rpcUrl = `https://devnet.helius-rpc.com/?api-key=${encodeURIComponent(apiKey.trim())}`;
+    const cleanKey = apiKey.trim();
+    if (!/^[a-zA-Z0-9_-]{8,128}$/.test(cleanKey)) {
+      throw new Error("Ungültiger Helius API-Key.");
+    }
+    const rpcUrl = `https://devnet.helius-rpc.com/?api-key=${encodeURIComponent(cleanKey)}`;
     const client = await createSprClient({
       solanaRpcUrl: rpcUrl,
       proverTee: SignedTeePolicy.forNetwork("devnet"),
@@ -113,6 +145,8 @@ export class DevnetSprSession {
   async fetchState(requireSlot?: bigint): Promise<{
     publicSol: number;
     privateSol: number;
+    publicLamports: bigint;
+    privateLamports: bigint;
     utxoCount: number;
     history: ActivityItem[];
   }> {
@@ -126,7 +160,8 @@ export class DevnetSprSession {
 
     const balances = getPrivateTokenBalances(this.wallet);
     const solBalance = balances.find((b) => b.mint === SOL_MINT);
-    const privateSol = solBalance ? lamportsToSolNumber(solBalance.amount) : 0;
+    const privateLamports = solBalance ? solBalance.amount : 0n;
+    const privateSol = lamportsToSolNumber(privateLamports);
     const utxoCount = solBalance ? solBalance.utxos.length : 0;
 
     const rawTxs = getPrivateTransactions(this.wallet);
@@ -153,27 +188,38 @@ export class DevnetSprSession {
     return {
       publicSol: lamportsToSolNumber(publicLamports),
       privateSol,
+      publicLamports,
+      privateLamports,
       utxoCount,
       history,
     };
   }
 
-  async shieldSol(amountSol: number): Promise<{ signature: string; slot: bigint }> {
+  async shieldLamports(amountLamports: bigint): Promise<{ signature: string; slot: bigint }> {
+    if (amountLamports <= 0n) {
+      throw new Error("Betrag muss größer als 0 sein.");
+    }
     await this.ensureRegistered();
     const tx = await buildDepositTransaction({
       client: this.client,
       feePayer: this.ownerAddress,
       recipient: this.keypair.shieldedAddress(),
       asset: SOL_MINT,
-      amount: solToLamports(amountSol),
+      amount: amountLamports,
     });
     return this.signAndSend(tx);
   }
 
-  async sendPrivateSol(
+  async sendPrivateLamports(
     recipientSolanaAddress: string,
-    amountSol: number,
+    amountLamports: bigint,
   ): Promise<{ signature: string; slot: bigint }> {
+    if (amountLamports <= 0n) {
+      throw new Error("Betrag muss größer als 0 sein.");
+    }
+    if (!isValidSolanaAddress(recipientSolanaAddress)) {
+      throw new Error("Ungültige Solana-Empfängeradresse.");
+    }
     const recipient = address(recipientSolanaAddress.trim());
     const tx = await buildTransferTransaction({
       client: this.client,
@@ -182,15 +228,21 @@ export class DevnetSprSession {
       feePayer: this.ownerAddress,
       recipient,
       asset: SOL_MINT,
-      amount: solToLamports(amountSol),
+      amount: amountLamports,
     });
     return this.signAndSend(tx);
   }
 
-  async unshieldSol(
+  async unshieldLamports(
     recipientSolanaAddress: string,
-    amountSol: number,
+    amountLamports: bigint,
   ): Promise<{ signature: string; slot: bigint }> {
+    if (amountLamports <= 0n) {
+      throw new Error("Betrag muss größer als 0 sein.");
+    }
+    if (!isValidSolanaAddress(recipientSolanaAddress)) {
+      throw new Error("Ungültige Solana-Empfängeradresse.");
+    }
     const recipient = address(recipientSolanaAddress.trim());
     const tx = await buildWithdrawalTransaction({
       client: this.client,
@@ -199,7 +251,7 @@ export class DevnetSprSession {
       feePayer: this.ownerAddress,
       recipient,
       asset: SOL_MINT,
-      amount: solToLamports(amountSol),
+      amount: amountLamports,
     });
     return this.signAndSend(tx);
   }
