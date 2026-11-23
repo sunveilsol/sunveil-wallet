@@ -11,6 +11,7 @@
   "dependencies": {
     "@heliuslabs/spr": "^0.9.0-alpha",
     "@solana/kit": "^8.6.0",
+    "@vercel/analytics": "^2.0.1",
     "lucide-react": "^0.511.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",

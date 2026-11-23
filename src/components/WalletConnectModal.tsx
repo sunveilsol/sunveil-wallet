@@ -203,11 +203,11 @@ export function WalletConnectModal({
             {/* Fund SUNVEIL Privacy Vault */}
             <div className="p-4 rounded-2xl bg-[#110d0a] border border-[#ff5500]/30 space-y-3">
               <div className="text-xs font-semibold text-[#ff944d]">
-                SUNVEIL Privacy-Tresor aufladen (Devnet)
+                SUNVEIL Privacy-Tresor aufladen (Devnet / Mainnet-Beta)
               </div>
               <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Sende Devnet-SOL aus <strong className="text-zinc-200">{connected.name}</strong> an
-                deine SUNVEIL-Adresse und klicke danach im Tresor auf{" "}
+                Sende SOL aus <strong className="text-zinc-200">{connected.name}</strong> an deine
+                SUNVEIL-Adresse und klicke danach im Tresor auf{" "}
                 <strong className="text-white">„Shield“</strong>, um sie per Groth16 ZK-Proof zu
                 verschlüsseln.
               </p>

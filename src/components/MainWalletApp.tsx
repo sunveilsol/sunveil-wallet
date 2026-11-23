@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
+  AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
   Check,
@@ -9,18 +11,21 @@ import {
   Eye,
   EyeOff,
   Flame,
+  ImageDown,
   KeyRound,
   Link2,
   Lock,
   Radio,
   RefreshCw,
   Send,
+  Share2,
   Shield,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
   Wallet as WalletIcon,
+  X,
 } from "lucide-react";
 import type {
   ActiveTab,
@@ -43,11 +48,12 @@ import {
   type UnlockedWallet,
 } from "../lib/vault";
 import {
-  DevnetSprSession,
+  SprSession,
   isValidSolanaAddress,
   lamportsToSolNumber,
   parseSolToLamports,
 } from "../lib/sprService";
+import { downloadPrivatePayCardPng } from "../lib/payCard";
 import type { ConnectedExternalWallet } from "../lib/externalWallet";
 import { QrCode } from "./QrCode";
 import { WalletConnectModal } from "./WalletConnectModal";
@@ -103,15 +109,17 @@ export function MainWalletApp({
   const [tab, setTab] = useState<ActiveTab>("vault");
   const [privacyBlur, setPrivacyBlur] = useState(false);
 
-  // Network & Helius Devnet Session
+  // Network & Helius Live Session (Devnet / Mainnet-Beta)
   const [apiKeyInput, setApiKeyInput] = useState(() => loadSavedApiKey());
   const [networkMode, setNetworkMode] = useState<NetworkMode>(() =>
     loadSavedApiKey() ? "devnet" : "demo",
   );
-  const sessionRef = useRef<DevnetSprSession | null>(null);
+  const [confirmMainnetModal, setConfirmMainnetModal] = useState(false);
+  const [payCardBusy, setPayCardBusy] = useState(false);
+  const sessionRef = useRef<SprSession | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [devnetReady, setDevnetReady] = useState(false);
-  const [devnetStatus, setDevnetStatus] = useState<string | null>(null);
+  const [liveReady, setLiveReady] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
 
   // Balances & History (exact BigInt lamports alongside display SOL)
   const [publicLamports, setPublicLamports] = useState<bigint>(1_750_000_000n);
@@ -246,32 +254,34 @@ export function MainWalletApp({
     };
   }, [onLock]);
 
-  // Connect to Helius Devnet when in devnet mode
-  const refreshDevnet = useCallback(
+  // Connect to Helius Devnet or Mainnet-Beta when in live mode
+  const refreshLiveNetwork = useCallback(
     async (requireSlot?: bigint) => {
-      if (networkMode !== "devnet") return;
+      if (networkMode === "demo") return;
+      const cluster = networkMode;
+      const clusterLabel = cluster === "mainnet" ? "Mainnet-Beta" : "Devnet";
       const key = apiKeyInput.trim();
       if (!key) {
-        setDevnetReady(false);
-        setDevnetStatus("Helius API-Key fehlt — wechsle in Sicherheit & Helius.");
+        setLiveReady(false);
+        setLiveStatus(`Helius API-Key fehlt — wechsle in Sicherheit & Helius.`);
         return;
       }
       setSyncing(true);
-      setDevnetStatus("Verbinde mit Helius Devnet & Photon Indexer…");
+      setLiveStatus(`Verbinde mit Helius ${clusterLabel} & Photon Indexer…`);
       try {
-        if (!sessionRef.current) {
-          sessionRef.current = await DevnetSprSession.connect(key, unlocked.keypair);
+        if (!sessionRef.current || sessionRef.current.cluster !== cluster) {
+          sessionRef.current = await SprSession.connect(key, unlocked.keypair, cluster);
         }
         const state = await sessionRef.current.fetchState(requireSlot);
         setPublicLamports(state.publicLamports);
         setPrivateLamports(state.privateLamports);
         setUtxoCount(state.utxoCount);
         setHistory(state.history);
-        setDevnetReady(true);
-        setDevnetStatus("Verbunden · Helius Devnet + TEE Prover aktiv");
+        setLiveReady(true);
+        setLiveStatus(`Verbunden · Helius ${clusterLabel} + TEE Prover aktiv`);
       } catch (err) {
-        setDevnetReady(false);
-        setDevnetStatus(sanitizeErrorMessage(err, "Devnet-Sync fehlgeschlagen."));
+        setLiveReady(false);
+        setLiveStatus(sanitizeErrorMessage(err, `${clusterLabel}-Sync fehlgeschlagen.`));
       } finally {
         setSyncing(false);
       }
@@ -280,19 +290,59 @@ export function MainWalletApp({
   );
 
   useEffect(() => {
-    if (networkMode === "devnet") {
+    if (networkMode !== "demo") {
       sessionRef.current = null;
-      void refreshDevnet();
+      setLiveReady(false);
+      void refreshLiveNetwork();
     } else {
       sessionRef.current = null;
-      setDevnetReady(false);
-      setDevnetStatus(null);
+      setLiveReady(false);
+      setLiveStatus(null);
       setPublicLamports(1_750_000_000n);
       setPrivateLamports(4_350_000_000n);
       setUtxoCount(2);
       setHistory(DEMO_INITIAL_HISTORY);
     }
-  }, [networkMode, refreshDevnet]);
+  }, [networkMode, refreshLiveNetwork]);
+
+  function requestMainnetSwitch() {
+    if (unlocked.isEphemeral) {
+      showToast(
+        "err",
+        "Mainnet-Beta erfordert einen passwortgeschützten Tresor mit Seed-Backup (nicht die temporäre Sandbox).",
+      );
+      return;
+    }
+    if (!apiKeyInput.trim()) {
+      setTab("security");
+      showToast("ok", "Gib zuerst deinen Helius API-Key ein, um Mainnet-Beta zu aktivieren.");
+      return;
+    }
+    try {
+      saveApiKey(apiKeyInput);
+    } catch (err) {
+      showToast("err", sanitizeErrorMessage(err, "Ungültiger Helius API-Key."));
+      return;
+    }
+    setConfirmMainnetModal(true);
+  }
+
+  async function handleDownloadPayCard() {
+    setPayCardBusy(true);
+    try {
+      const file = await downloadPrivatePayCardPng({
+        handle: xHandle,
+        solanaAddress: unlocked.profile.solanaAddress,
+        payLinkUrl,
+        presetAmount: payLinkPresetAmount,
+      });
+      showToast("ok", `Private Pay-Card heruntergeladen (${file}) — bereit zum Posten auf X!`);
+    } catch (err) {
+      showToast("err", sanitizeErrorMessage(err, "Pay-Card Export fehlgeschlagen."));
+    } finally {
+      setPayCardBusy(false);
+    }
+  }
 
   async function handleCopy(
     id: string,
@@ -363,6 +413,11 @@ export function MainWalletApp({
       return;
     }
 
+    if (networkMode === "mainnet") {
+      await handleCopy("mainnet-deposit", unlocked.profile.solanaAddress, "Mainnet-Einzahladresse");
+      return;
+    }
+
     if (!sessionRef.current) {
       showToast("err", "Bitte erst mit Helius Devnet verbinden.");
       return;
@@ -370,7 +425,7 @@ export function MainWalletApp({
     setSyncing(true);
     try {
       const sig = await sessionRef.current.requestAirdrop(1);
-      await refreshDevnet();
+      await refreshLiveNetwork();
       showToast("ok", `Devnet Airdrop (+1 SOL) bestätigt: ${shortAddr(sig)}`);
     } catch (err) {
       showToast(
@@ -495,16 +550,18 @@ export function MainWalletApp({
         return;
       }
 
-      // LIVE HELIUS DEVNET MODE
+      // LIVE HELIUS MODE (DEVNET OR MAINNET-BETA)
       if (!sessionRef.current) {
-        throw new Error("Keine aktive Helius Devnet-Verbindung.");
+        throw new Error(
+          `Keine aktive Helius ${networkMode === "mainnet" ? "Mainnet-Beta" : "Devnet"}-Verbindung.`,
+        );
       }
 
       if (txAction === "shield") {
         setTxStep("Prüfe Registry & sende Deposit an Solana Privacy Program…");
         const { signature, slot } = await sessionRef.current.shieldLamports(amountLamports);
         setTxStep("Synchronisiere Photon Indexer…");
-        await refreshDevnet(slot);
+        await refreshLiveNetwork(slot);
         showToast("ok", `Shield bestätigt! Tx: ${shortAddr(signature)}`);
       } else if (txAction === "privateSend") {
         setTxStep("Erzeuge Groth16 Proof via Helius TEE Prover & signiere lokal…");
@@ -513,7 +570,7 @@ export function MainWalletApp({
           amountLamports,
         );
         setTxStep("Synchronisiere verschlüsselte UTXOs…");
-        await refreshDevnet(slot);
+        await refreshLiveNetwork(slot);
         showToast("ok", `Privater Transfer bestätigt! Tx: ${shortAddr(signature)}`);
       } else {
         setTxStep("Erzeuge Groth16 Withdrawal-Proof & zahle öffentlich aus…");
@@ -522,7 +579,7 @@ export function MainWalletApp({
           amountLamports,
         );
         setTxStep("Synchronisiere Balances…");
-        await refreshDevnet(slot);
+        await refreshLiveNetwork(slot);
         showToast("ok", `Unshield bestätigt! Tx: ${shortAddr(signature)}`);
       }
       setPayLinkNotice(null);
@@ -608,31 +665,42 @@ export function MainWalletApp({
             <button
               type="button"
               onClick={() => {
+                setTab("security");
                 if (networkMode === "demo" && !apiKeyInput.trim()) {
-                  setTab("security");
-                  showToast("ok", "Gib deinen kostenlosen Helius API-Key ein, um Live Devnet zu aktivieren.");
-                  return;
+                  showToast(
+                    "ok",
+                    "Gib deinen kostenlosen Helius API-Key ein, um Devnet oder Mainnet-Beta zu aktivieren.",
+                  );
                 }
-                setNetworkMode((m) => (m === "demo" ? "devnet" : "demo"));
               }}
               className={`h-9 px-2.5 sm:px-3 rounded-xl text-xs font-medium border inline-flex items-center justify-center gap-2 transition cursor-pointer ${
-                networkMode === "devnet"
-                  ? "bg-emerald-500/12 border-emerald-500/35 text-emerald-300"
-                  : "bg-[#ff5500]/12 border-[#ff5500]/35 text-[#ff944d]"
+                networkMode === "mainnet"
+                  ? "bg-rose-500/15 border-rose-500/45 text-rose-200"
+                  : networkMode === "devnet"
+                    ? "bg-emerald-500/12 border-emerald-500/35 text-emerald-300"
+                    : "bg-[#ff5500]/12 border-[#ff5500]/35 text-[#ff944d]"
               }`}
-              title="Zwischen Sandbox-Vorschau und echtem Helius Devnet wechseln"
+              title="Netzwerk wechseln (Sandbox, Helius Devnet oder Mainnet-Beta)"
             >
               <span
                 className={`w-2 h-2 rounded-full shrink-0 ${
-                  networkMode === "devnet"
-                    ? devnetReady
-                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                  networkMode === "mainnet"
+                    ? liveReady
+                      ? "bg-rose-400 shadow-[0_0_8px_#fb7185]"
                       : "bg-amber-400 animate-pulse"
-                    : "bg-[#ff6a00] shadow-[0_0_8px_#ff6a00]"
+                    : networkMode === "devnet"
+                      ? liveReady
+                        ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                        : "bg-amber-400 animate-pulse"
+                      : "bg-[#ff6a00] shadow-[0_0_8px_#ff6a00]"
                 }`}
               />
               <span className="hidden md:inline">
-                {networkMode === "devnet" ? "Helius Devnet" : "Sandbox Demo"}
+                {networkMode === "mainnet"
+                  ? "Mainnet-Beta"
+                  : networkMode === "devnet"
+                    ? "Helius Devnet"
+                    : "Sandbox Demo"}
               </span>
             </button>
 
@@ -806,12 +874,16 @@ export function MainWalletApp({
                       disabled={syncing}
                       className="flex-1 py-2.5 px-3 rounded-xl bg-[#ff5500]/14 hover:bg-[#ff5500]/22 border border-[#ff5500]/35 text-[#ff944d] text-xs font-semibold transition cursor-pointer disabled:opacity-50"
                     >
-                      {networkMode === "devnet" ? "+1 SOL Devnet" : "+2 SOL Faucet"}
+                      {networkMode === "mainnet"
+                        ? "Einzahladresse kopieren"
+                        : networkMode === "devnet"
+                          ? "+1 SOL Devnet"
+                          : "+2 SOL Faucet"}
                     </button>
-                    {networkMode === "devnet" && (
+                    {networkMode !== "demo" && (
                       <button
                         type="button"
-                        onClick={() => void refreshDevnet()}
+                        onClick={() => void refreshLiveNetwork()}
                         disabled={syncing}
                         className="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-300 cursor-pointer"
                         title="Wallet synchronisieren"
@@ -823,10 +895,20 @@ export function MainWalletApp({
                 </div>
               </div>
 
-              {devnetStatus && networkMode === "devnet" && (
+              {networkMode === "mainnet" && (
+                <div className="mt-5 px-3.5 py-2.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-200 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>
+                    <strong>Mainnet-Beta aktiv:</strong> Echte SOL über Helius Privacy Rings. Starte
+                    mit kleinen Beträgen &amp; bewahre dein Seed-Backup offline auf.
+                  </span>
+                </div>
+              )}
+
+              {liveStatus && networkMode !== "demo" && (
                 <div className="mt-5 pt-4 border-t border-zinc-800/70 text-xs text-zinc-400 flex items-center gap-2">
                   <Radio className="w-3.5 h-3.5 text-[#ff6a00]" />
-                  <span>{devnetStatus}</span>
+                  <span>{liveStatus}</span>
                 </div>
               )}
 
@@ -984,9 +1066,13 @@ export function MainWalletApp({
                             {isInbound ? "+" : item.kind === "deposit" ? "⇄ " : "−"}
                             {formatSol(item.amountSol)} SOL
                           </div>
-                          {networkMode === "devnet" ? (
+                          {networkMode !== "demo" ? (
                             <a
-                              href={`https://solscan.io/tx/${encodeURIComponent(item.signature)}?cluster=devnet`}
+                              href={
+                                networkMode === "mainnet"
+                                  ? `https://solscan.io/tx/${encodeURIComponent(item.signature)}`
+                                  : `https://solscan.io/tx/${encodeURIComponent(item.signature)}?cluster=devnet`
+                              }
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-500 hover:text-[#ff8533] mt-0.5"
@@ -1347,6 +1433,29 @@ export function MainWalletApp({
               <div className="mt-4 px-3 py-1 rounded-full bg-black/50 border border-[#ff5500]/30 font-mono text-[11px] text-[#ff944d]">
                 {shortAddr(unlocked.profile.solanaAddress, 6, 6)}
               </div>
+
+              <div className="mt-5 w-full flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPayCard()}
+                  disabled={payCardBusy}
+                  className="w-full py-2.5 px-4 rounded-xl ember-btn-primary text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <ImageDown className="w-4 h-4 shrink-0" />
+                  {payCardBusy ? "Erstelle PNG-Karte…" : "Pay-Card als PNG herunterladen"}
+                </button>
+                <a
+                  href={`https://x.com/intent/tweet?text=${encodeURIComponent(
+                    `Pay me privately on Solana — amount encrypted via @Helius Privacy Rings 🌘\n\n${payLinkUrl}`,
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-[#ff5500]/40 text-zinc-200 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-[#ff8533]" />
+                  Direkt auf X teilen
+                </a>
+              </div>
             </div>
           </div>
         )}
@@ -1354,7 +1463,7 @@ export function MainWalletApp({
         {/* ================= TAB 4: SECURITY & HELIUS ================= */}
         {tab === "security" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Helius Devnet Connection */}
+            {/* Helius Live Connection (Devnet & Mainnet-Beta) */}
             <div className="ember-card rounded-3xl p-6 space-y-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-[#ff5500]/15 border border-[#ff5500]/35 flex items-center justify-center text-[#ff7a29]">
@@ -1362,7 +1471,7 @@ export function MainWalletApp({
                 </div>
                 <div>
                   <h2 className="text-base font-semibold text-white">
-                    Helius Devnet Verbindung
+                    Helius Netzwerk (Devnet &amp; Mainnet-Beta)
                   </h2>
                   <p className="text-xs text-zinc-400">
                     Unified RPC + Photon Indexer + TEE Groth16 Prover
@@ -1382,12 +1491,12 @@ export function MainWalletApp({
                   <ExternalLink className="w-3 h-3" />
                 </a>
                 . Der Key wird nur lokal in deinem Browser gespeichert und aktiviert echte
-                Solana-Devnet-Transaktionen.
+                Solana-Privacy-Rings-Transaktionen auf Devnet oder Mainnet-Beta.
               </p>
 
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">
-                  Helius API-Key (Devnet)
+                  Helius API-Key (Devnet &amp; Mainnet)
                 </label>
                 <input
                   type="password"
@@ -1399,7 +1508,21 @@ export function MainWalletApp({
                 />
               </div>
 
-              <div className="flex gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNetworkMode("demo");
+                    showToast("ok", "Sandbox Demo-Modus aktiv.");
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                    networkMode === "demo"
+                      ? "bg-[#ff5500]/18 border-[#ff5500]/50 text-[#ff944d]"
+                      : "bg-zinc-900 border-zinc-800 hover:border-zinc-700 text-zinc-300"
+                  }`}
+                >
+                  Sandbox Demo
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -1417,19 +1540,24 @@ export function MainWalletApp({
                       showToast("err", sanitizeErrorMessage(err, "Ungültiger API-Key."));
                     }
                   }}
-                  className="flex-1 py-3 rounded-xl ember-btn-primary text-white text-xs font-semibold cursor-pointer"
+                  className={`py-2.5 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                    networkMode === "devnet"
+                      ? "bg-emerald-500/18 border-emerald-500/50 text-emerald-300"
+                      : "ember-btn-primary text-white border-transparent"
+                  }`}
                 >
-                  Speichern &amp; Live Devnet starten
+                  Helius Devnet
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setNetworkMode("demo");
-                    showToast("ok", "Sandbox Demo-Modus aktiv.");
-                  }}
-                  className="px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 text-xs font-semibold cursor-pointer"
+                  onClick={requestMainnetSwitch}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                    networkMode === "mainnet"
+                      ? "bg-rose-500/20 border-rose-500/55 text-rose-200"
+                      : "bg-rose-950/35 hover:bg-rose-950/60 border-rose-500/35 text-rose-200"
+                  }`}
                 >
-                  Demo
+                  Mainnet-Beta ⚡
                 </button>
               </div>
             </div>
@@ -1662,6 +1790,83 @@ export function MainWalletApp({
       />
 
       <LegalModal open={legalOpen} onClose={() => setLegalOpen(false)} lang="de" />
+
+      {confirmMainnetModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setConfirmMainnetModal(false)}
+          >
+            <div
+              className="ember-card w-full max-w-md rounded-3xl p-6 space-y-5 relative border border-rose-500/40"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/40 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-rose-400" />
+                  </div>
+                  <div>
+                    <h2 className="font-display text-lg font-bold text-white">
+                      Mainnet-Beta aktivieren?
+                    </h2>
+                    <p className="text-xs text-zinc-400">
+                      Echtes Solana Mainnet · Helius Privacy Rings
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmMainnetModal(false)}
+                  className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer"
+                  aria-label="Schließen"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2.5 text-xs text-zinc-300 leading-relaxed">
+                <p>
+                  Auf <strong className="text-white">Mainnet-Beta</strong> werden{" "}
+                  <strong className="text-rose-300">echte SOL</strong> über Helius Solana Privacy
+                  Rings bewegt. Bitte stelle sicher:
+                </p>
+                <ul className="space-y-1.5 text-zinc-400 list-disc pl-4">
+                  <li>Du hast deinen geheimen Ed25519-Seed sicher offline gesichert.</li>
+                  <li>
+                    Das Protokoll befindet sich in der frühen Mainnet-Beta — teste zuerst mit
+                    kleinen Beträgen (z. B. 0,05 SOL).
+                  </li>
+                  <li>Alle Signaturen erfolgen 100 % lokal in deinem Browser (Self-Custody).</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmMainnetModal(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-semibold cursor-pointer"
+                >
+                  Auf Devnet bleiben
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sessionRef.current = null;
+                    setConfirmMainnetModal(false);
+                    setNetworkMode("mainnet");
+                    setTab("vault");
+                    showToast("ok", "Mainnet-Beta aktiviert — verbinde mit Helius Mainnet…");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer shadow-[0_0_24px_rgba(225,29,72,0.35)]"
+                >
+                  Mainnet-Beta starten
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

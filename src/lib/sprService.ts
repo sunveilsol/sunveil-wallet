@@ -21,7 +21,7 @@ import {
   type Address,
   type Transaction,
 } from "@solana/kit";
-import type { ActivityItem } from "../types";
+import type { ActivityItem, LiveSprCluster } from "../types";
 
 const LAMPORTS_PER_SOL_NUM = 1_000_000_000;
 const LAMPORTS_PER_SOL_BIGINT = 1_000_000_000n;
@@ -65,39 +65,48 @@ export function isValidSolanaAddress(value: string): boolean {
   return trimmed.length >= 32 && trimmed.length <= 44 && isAddress(trimmed);
 }
 
-export class DevnetSprSession {
+export class SprSession {
   readonly client: SprClient;
   readonly wallet: Wallet;
   readonly keys: LocalKeys;
   readonly keypair: ShieldedKeypair;
   readonly ownerAddress: Address;
+  readonly cluster: LiveSprCluster;
 
   private constructor(
     client: SprClient,
     wallet: Wallet,
     keys: LocalKeys,
     keypair: ShieldedKeypair,
+    cluster: LiveSprCluster,
   ) {
     this.client = client;
     this.wallet = wallet;
     this.keys = keys;
     this.keypair = keypair;
     this.ownerAddress = keypair.shieldedAddress().solanaAddress();
+    this.cluster = cluster;
   }
 
-  static async connect(apiKey: string, keypair: ShieldedKeypair): Promise<DevnetSprSession> {
+  static async connect(
+    apiKey: string,
+    keypair: ShieldedKeypair,
+    cluster: LiveSprCluster = "devnet",
+  ): Promise<SprSession> {
     const cleanKey = apiKey.trim();
     if (!/^[a-zA-Z0-9_-]{8,128}$/.test(cleanKey)) {
       throw new Error("Ungültiger Helius API-Key.");
     }
-    const rpcUrl = `https://devnet.helius-rpc.com/?api-key=${encodeURIComponent(cleanKey)}`;
+    const host =
+      cluster === "mainnet" ? "mainnet.helius-rpc.com" : "devnet.helius-rpc.com";
+    const rpcUrl = `https://${host}/?api-key=${encodeURIComponent(cleanKey)}`;
     const client = await createSprClient({
       solanaRpcUrl: rpcUrl,
-      proverTee: SignedTeePolicy.forNetwork("devnet"),
+      proverTee: SignedTeePolicy.forNetwork(cluster),
     });
     const wallet = new Wallet({ identity: keypair.shieldedAddress() });
     const keys = LocalKeys.fromKeypair(keypair, client.proofService);
-    return new DevnetSprSession(client, wallet, keys, keypair);
+    return new SprSession(client, wallet, keys, keypair, cluster);
   }
 
   private async signAndSend(tx: Transaction): Promise<{ signature: string; slot: bigint }> {
@@ -135,6 +144,9 @@ export class DevnetSprSession {
   }
 
   async requestAirdrop(solAmount = 1): Promise<string> {
+    if (this.cluster !== "devnet") {
+      throw new Error("Airdrops sind nur auf Solana Devnet verfügbar.");
+    }
     const sig = await this.client.solanaRpc
       .requestAirdrop(this.ownerAddress, lamports(solToLamports(solAmount)))
       .send();

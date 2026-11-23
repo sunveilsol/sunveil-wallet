@@ -1,4 +1,6 @@
-export type NetworkMode = "demo" | "devnet";
+export type LiveSprCluster = "devnet" | "mainnet";
+
+export type NetworkMode = "demo" | LiveSprCluster;
 
 export type ActiveTab = "vault" | "transact" | "paylinks" | "security";
 

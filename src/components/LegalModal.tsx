@@ -64,23 +64,23 @@ export function LegalModal({ open, onClose, lang = "de" }: LegalModalProps) {
 
           <section className="p-4 rounded-2xl bg-[#09090d] border border-zinc-800/90 space-y-2">
             <h3 className="font-semibold text-white">
-              {isDe ? "2. Beta- & Devnet-Hinweis (Nutzung auf eigene Verantwortung)" : "2. Beta & Devnet Software (Use at Your Own Risk)"}
+              {isDe ? "2. Beta-Hinweis (Nutzung auf eigene Verantwortung)" : "2. Beta Software (Use at Your Own Risk)"}
             </h3>
             <p className="text-zinc-400">
               {isDe
-                ? "SUNVEIL befindet sich in der frühen öffentlichen Entwicklung (Sandbox & Solana Devnet) und wird ohne Gewährleistung („as-is“) bereitgestellt. Bewahre dein Backup sicher auf. Keine Anlage-, Steuer- oder Rechtsberatung."
-                : "SUNVEIL is early-stage public software (Sandbox & Solana Devnet) provided 'as-is' without warranties of any kind. Always keep your own backups safely offline. Nothing in this app constitutes financial, tax, or legal advice."}
+                ? "SUNVEIL befindet sich in der frühen öffentlichen Entwicklung (Sandbox, Solana Devnet & Mainnet-Beta) und wird ohne Gewährleistung („as-is“) bereitgestellt. Bewahre dein Backup sicher offline auf. Keine Anlage-, Steuer- oder Rechtsberatung."
+                : "SUNVEIL is early-stage public software (Sandbox, Solana Devnet & Mainnet-Beta) provided 'as-is' without warranties of any kind. Always keep your own backups safely offline. Nothing in this app constitutes financial, tax, or legal advice."}
             </p>
           </section>
 
           <section className="p-4 rounded-2xl bg-[#09090d] border border-zinc-800/90 space-y-2">
             <h3 className="font-semibold text-white">
-              {isDe ? "3. Zero-Data Datenschutz" : "3. Zero-Data Privacy Policy"}
+              {isDe ? "3. Privacy-First Datenschutz" : "3. Privacy-First Data Policy"}
             </h3>
             <p className="text-zinc-400">
               {isDe
-                ? "SUNVEIL setzt keine Werbe-Cookies, kein Analytics-Tracking und speichert keine personenbezogenen Daten auf eigenen Servern. Lokale Einstellungen (verschlüsselter Tresor, Handle, optionaler Helius API-Key) liegen ausschließlich im LocalStorage deines Geräts. Bei Nutzung von Devnet-Funktionen kommuniziert dein Browser direkt mit öffentlichen Solana- bzw. Helius-RPC-Endpunkten."
-                : "SUNVEIL uses zero advertising cookies, zero analytics trackers, and stores no personal data on our servers. Local preferences (encrypted vault, handle, optional Helius API key) reside exclusively in your browser's LocalStorage. When using Devnet features, your browser communicates directly with public Solana or Helius RPC endpoints."}
+                ? "SUNVEIL setzt keine Werbe-Cookies, kein Cross-Site-Tracking und speichert niemals Private Keys, Wallet-Adressen oder Transaktionsdaten auf eigenen Servern. Für rein aggregierte, anonyme Seitenaufruf-Statistiken nutzt die Website cookiefreie Vercel Web Analytics (ohne personenbezogene Profile). Lokale Einstellungen (verschlüsselter Tresor, Handle, optionaler Helius API-Key) liegen ausschließlich im LocalStorage deines Geräts. Bei Devnet-/Mainnet-Nutzung kommuniziert dein Browser direkt mit Solana- bzw. Helius-RPC-Endpunkten."
+                : "SUNVEIL uses zero advertising cookies, zero cross-site tracking, and never stores private keys, wallet addresses, or transaction data on our servers. The site uses cookieless, privacy-friendly Vercel Web Analytics solely for aggregated anonymous page-view counts (no personal profiles). Local preferences (encrypted vault, handle, optional Helius API key) reside exclusively in your browser's LocalStorage. When using Devnet or Mainnet-Beta, your browser communicates directly with Solana or Helius RPC endpoints."}
             </p>
           </section>
 

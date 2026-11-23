@@ -1,4 +1,4 @@
-const CACHE_NAME = "sunveil-pwa-v4";
+const CACHE_NAME = "sunveil-pwa-v5";
 const SHELL_ASSETS = [
   "/",
   "/manifest.webmanifest",
@@ -35,8 +35,8 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   // Never intercept or cache cross-origin RPC/API calls
   if (url.origin !== self.location.origin) return;
-  // Never cache URLs with query parameters (e.g. ?pay=...&handle=...&amount=...)
-  if (url.search) return;
+  // Never cache URLs with query parameters (e.g. ?pay=...&handle=...&amount=...) or Vercel Analytics endpoints
+  if (url.search || url.pathname.startsWith("/_vercel/")) return;
 
   // Network-first for HTML & JS bundles so security updates go live immediately
   event.respondWith(
