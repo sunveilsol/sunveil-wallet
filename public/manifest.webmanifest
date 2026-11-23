@@ -1,0 +1,35 @@
+{
+  "name": "SUNVEIL — Private Solana Wallet",
+  "short_name": "SUNVEIL",
+  "description": "100% Non-Custodial Obsidian & Neon-Orange Solana Privacy Pocket Wallet & Encrypted X Pay-Links powered by Helius Solana Privacy Rings.",
+  "start_url": "/#app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070709",
+  "theme_color": "#070709",
+  "categories": ["finance", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open Vault",
+      "short_name": "Vault",
+      "description": "Open your encrypted SUNVEIL Solana vault",
+      "url": "/#app",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

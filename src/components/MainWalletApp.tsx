@@ -39,7 +39,11 @@ import {
   type UnlockedWallet,
 } from "../lib/vault";
 import { DevnetSprSession, isValidSolanaAddress } from "../lib/sprService";
+import type { ConnectedExternalWallet } from "../lib/externalWallet";
 import { QrCode } from "./QrCode";
+import { WalletConnectModal } from "./WalletConnectModal";
+import { InstallAppButton } from "./InstallAppButton";
+import { LegalModal } from "./LegalModal";
 
 interface MainWalletAppProps {
   unlocked: UnlockedWallet;
@@ -119,9 +123,12 @@ export function MainWalletApp({
   const [xHandle, setXHandle] = useState(() => loadSavedHandle());
   const [payLinkPresetAmount, setPayLinkPresetAmount] = useState("0.5");
 
-  // Security UI
+  // Security UI & External Wallet
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [revealSecret, setRevealSecret] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [connectedWallet, setConnectedWallet] = useState<ConnectedExternalWallet | null>(null);
+  const [legalOpen, setLegalOpen] = useState(false);
 
   const showToast = useCallback((kind: "ok" | "err", text: string) => {
     setToast({ kind, text });
@@ -435,6 +442,25 @@ export function MainWalletApp({
 
           {/* Right Controls */}
           <div className="flex items-center gap-2">
+            {/* External Solana Wallet Connect (Phantom / Solflare / Backpack) */}
+            <button
+              type="button"
+              onClick={() => setWalletModalOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition cursor-pointer ${
+                connectedWallet
+                  ? "bg-emerald-500/12 border-emerald-500/35 text-emerald-300"
+                  : "bg-zinc-900/90 border-zinc-800 hover:border-[#ff5500]/45 text-zinc-200 hover:text-[#ff8a3d]"
+              }`}
+              title="Phantom, Solflare oder Backpack verbinden (100 % Non-Custodial)"
+            >
+              <WalletIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">
+                {connectedWallet
+                  ? `${connectedWallet.name} · ${shortAddr(connectedWallet.address, 4, 4)}`
+                  : "Wallet verbinden"}
+              </span>
+            </button>
+
             {/* Network Switch Pill */}
             <button
               type="button"
@@ -462,8 +488,13 @@ export function MainWalletApp({
                     : "bg-[#ff6a00] shadow-[0_0_8px_#ff6a00]"
                 }`}
               />
-              {networkMode === "devnet" ? "Helius Devnet" : "Sandbox Demo"}
+              <span className="hidden md:inline">
+                {networkMode === "devnet" ? "Helius Devnet" : "Sandbox Demo"}
+              </span>
             </button>
+
+            {/* PWA Install Button */}
+            <InstallAppButton lang="de" compact />
 
             {/* Privacy Blur Toggle */}
             <button
@@ -1327,6 +1358,46 @@ export function MainWalletApp({
           </div>
         )}
       </main>
+
+      <footer className="max-w-5xl w-full mx-auto px-4 sm:px-6 pb-8 pt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
+        <span>SUNVEIL · 100 % Non-Custodial Open-Source Interface</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setLegalOpen(true)}
+            className="hover:text-zinc-200 transition cursor-pointer"
+          >
+            Terms &amp; Zero-Data Privacy
+          </button>
+          <span>·</span>
+          <a
+            href="https://github.com/sunveilsol/sunveil-wallet"
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-zinc-200 transition"
+          >
+            GitHub
+          </a>
+        </div>
+      </footer>
+
+      <WalletConnectModal
+        open={walletModalOpen}
+        onClose={() => setWalletModalOpen(false)}
+        connected={connectedWallet}
+        onConnected={(w) => {
+          setConnectedWallet(w);
+          showToast("ok", `${w.name} verbunden (${shortAddr(w.address, 4, 4)}).`);
+        }}
+        onDisconnected={() => {
+          setConnectedWallet(null);
+          showToast("ok", "Externe Wallet getrennt.");
+        }}
+        sunveilVaultAddress={unlocked.profile.solanaAddress}
+        heliusApiKey={apiKeyInput}
+      />
+
+      <LegalModal open={legalOpen} onClose={() => setLegalOpen(false)} lang="de" />
     </div>
   );
 }

@@ -12,6 +12,8 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
+import { InstallAppButton } from "./InstallAppButton";
+import { LegalModal } from "./LegalModal";
 
 interface LandingPageProps {
   onLaunchApp: () => void;
@@ -201,6 +203,7 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
       ? "de"
       : "en",
   );
+  const [legalOpen, setLegalOpen] = useState(false);
   const t = COPY[lang];
 
   return (
@@ -306,6 +309,8 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
                 {t.ctaPrimary}
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              <InstallAppButton lang={lang} />
 
               <a
                 href={X_URL}
@@ -539,7 +544,15 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
             <span>·</span>
             <span>{t.footerDisclaimer}</span>
           </div>
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex flex-wrap items-center gap-4 shrink-0">
+            <button
+              type="button"
+              onClick={() => setLegalOpen(true)}
+              className="text-zinc-400 hover:text-white font-medium transition-colors cursor-pointer"
+            >
+              {lang === "de" ? "Terms & Datenschutz" : "Terms & Privacy"}
+            </button>
+            <span className="text-zinc-700">·</span>
             <a
               href="https://github.com/sunveilsol/sunveil-wallet"
               target="_blank"
@@ -560,6 +573,8 @@ export function LandingPage({ onLaunchApp, hasExistingVault }: LandingPageProps)
           </div>
         </div>
       </footer>
+
+      <LegalModal open={legalOpen} onClose={() => setLegalOpen(false)} lang={lang} />
     </div>
   );
 }
